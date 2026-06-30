@@ -1,0 +1,37 @@
+https://ezgif.com/
+https://hexed.it/
+https://steam.design/
+https://steamcommunity.com/sharedfiles/filedetails/?id=748624905	 ---- çizim vitrini ve ekran görüntüsü için
+https://steamcommunity.com/sharedfiles/filedetails/?id=2174159512        ---- atölye vitrini için
+
+---------------------------------------------------------------------------------------------------------
+
+ÇİZİM İÇİN === (BÜYÜK 506*944 KÜÇÜK 100*944)
+
+$J('#image_width').val(1000).attr('id',''),$J('#image_height').val(1).attr('id','');
+
+EKRAN GÖRÜNTÜSÜ İÇİN ===
+
+$J('#image_width').val('1000');$J('#image_height').val('1');$J('[name="file_type"]').val("5");
+
+---------------------------------------------------------------------------------------------------------
+
+ATÖLYE VİTRİNİ İÇİN === (150*1250)
+https://hexed.it/
+SONDAKİ RAKAMI 21 YAP KAYDET YÜKLE
+
+$J('[name=consumer_app_id]').val(480);$J('[name=file_type]').val(0);$J('[name=visibility]').val(0);
+
+-----------------------
+
+" 151 - 302 - 453 - 604 "
+#754x1250#
+
+https://steamcommunity.com/sharedfiles/edititem/767/3/
+
+Video çek gif e dönüştür =
+
+ScreenToGif
+https://www.screentogif.com/
+
+754*1250 olarak kaydet.

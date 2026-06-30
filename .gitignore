@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Uygulama çıktıları / geçici
+output/
+*.status.json
+steam_upload_manifest.json
+
+# Tarayıcı oturumu (gizli; commit edilmemeli)
+.steam_browser_profile/
+
+# Bundle edilen büyük binary'ler (depoya konmaz, ayrı dağıtılır)
+GİF/bin/
+GIF/bin/
+
+# OS
+Thumbs.db
+.DS_Store

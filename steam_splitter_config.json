@@ -1,0 +1,19 @@
+{
+  "default_preset": "Steam 150x1250 (5)",
+  "output_dir": "",
+  "open_output_after_process": false,
+  "auto_upload": false,
+  "steam_api_key": "",
+  "steam_app_id": "",
+  "steam_published_file_id": "",
+  "steam_community_upload_url": "https://steamcommunity.com/sharedfiles/edititem/767/3/",
+  "steam_community_profile_dir": "C:\\Users\\Aykut\\Desktop\\Desktop\\steameditor\\.steam_browser_profile",
+  "steam_community_auto_submit": true,
+  "steam_community_wait_after_upload_ms": 1200,
+  "steam_community_title_template": "‎ ",
+  "border_fx_enabled": false,
+  "border_fx_template": "BorderDesign10.png",
+  "border_fx_color": "#000000",
+  "border_fx_opacity": 100,
+  "border_fx_glow": 100
+}

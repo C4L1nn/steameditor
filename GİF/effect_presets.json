@@ -1,0 +1,13 @@
+{
+  "1": {
+    "effect": "Neon mor kenarlik",
+    "border": 0,
+    "glow": 95,
+    "intensity": 85,
+    "bloom": 81,
+    "vignette": 100,
+    "particles": 24,
+    "sharpen": true,
+    "smooth": false
+  }
+}
