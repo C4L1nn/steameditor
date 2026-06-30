@@ -459,6 +459,7 @@ C_SUCCESS= "#22c55e"
 C_SUCC_DK= "#166534"
 C_ERROR  = "#ef4444"
 C_INDIGO = "#6366f1"
+C_CARD_SEL = "#2a2018"   # seçili şablon kartı için sıcak tonlu arka plan
 
 
 # ── Renk Araçları ───────────────────────────────────────────
@@ -594,7 +595,7 @@ class TemplateCard(ctk.CTkFrame):
         def tick(n=self._N):
             self._t = max(0.0, min(1.0, self._t + delta))
             bc = lerp(C_BORDER, C_ACCENT, self._t)
-            bg = lerp(C_BG3, C_BG4, self._t)
+            bg = lerp(C_BG3, C_CARD_SEL, self._t)
             try:
                 self.configure(border_color=bc, fg_color=bg)
             except: return
@@ -896,8 +897,8 @@ class SplitPreview(ctk.CTkFrame):
         for i, path in enumerate(file_paths):
             card = ctk.CTkFrame(
                 self._scroll, fg_color=C_BG3,
-                corner_radius=10, width=self._THUMB_W + 18, height=300)
-            card.pack(side="left", padx=6, pady=4)
+                corner_radius=12, width=self._THUMB_W + 22, height=372)
+            card.pack(side="left", anchor="n", padx=6, pady=4)
             card.pack_propagate(False)
 
             # Thumbnail oluştur
@@ -1247,15 +1248,15 @@ class App(ctk.CTk):
                    nc=C_BG3, hc=C_BG4,
                    height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
-                   text_color=C_ACCENT,
+                   text_color=C_TEXT,
                    command=self._open_gif_maker
                    ).pack(fill="x", pady=2)
 
-        AnimButton(tools_f, text="Border FX",
+        AnimButton(tools_f, text="🎨  Border FX",
                    nc=C_BG3, hc=C_BG4,
                    height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
-                   text_color=C_ACCENT,
+                   text_color=C_TEXT,
                    command=self._open_border_fx
                    ).pack(fill="x", pady=2)
 
@@ -1271,7 +1272,7 @@ class App(ctk.CTk):
                    nc=C_BG3, hc=C_BG4,
                    height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
-                   text_color=C_ACCENT,
+                   text_color=C_TEXT,
                    command=self._run_steam_community_upload
                    ).pack(fill="x", pady=2)
 
@@ -2137,7 +2138,7 @@ class App(ctk.CTk):
     def _open_border_fx(self):
         templates = list_border_templates()
         if not templates:
-            self._status.error("Border Templates klasorunde PNG bulunamadi")
+            self._status.error("Border Templates klasöründe PNG bulunamadı")
             return
 
         if self._cfg.get("border_fx_template") not in templates:
@@ -2145,14 +2146,14 @@ class App(ctk.CTk):
 
         win = ctk.CTkToplevel(self)
         win.title("Border FX")
-        win.geometry("420x420")
+        win.geometry("440x624")
         win.configure(fg_color=C_BG1)
         win.grab_set()
 
         ctk.CTkLabel(win, text="Border FX",
                      font=ctk.CTkFont("Segoe UI", 15, weight="bold"),
                      text_color=C_TEXT).pack(anchor="w", padx=18, pady=(18, 6))
-        ctk.CTkLabel(win, text="Template, renk ve glow split oncesi tum gorsele uygulanir.",
+        ctk.CTkLabel(win, text="Template, renk ve glow split öncesi tüm görsele uygulanır.",
                      font=ctk.CTkFont("Segoe UI", 10),
                      text_color=C_DIM).pack(anchor="w", padx=18, pady=(0, 12))
 
@@ -2236,7 +2237,7 @@ class App(ctk.CTk):
             ).pack(side="left", padx=3)
         color_entry.bind("<KeyRelease>", sync_color_preview)
 
-        AnimButton(win, text="Tum renklerden sec",
+        AnimButton(win, text="Tüm renklerden seç",
                    nc=C_BG3, hc=C_BG4,
                    height=32,
                    text_color=C_TEXT,
@@ -2297,13 +2298,41 @@ class App(ctk.CTk):
     def _open_settings(self):
         win = ctk.CTkToplevel(self)
         win.title("Ayarlar")
-        win.geometry("560x720")
+        win.geometry("580x780")
         win.configure(fg_color=C_BG1)
         win.grab_set()
 
         ctk.CTkLabel(win, text="Uygulama Ayarları",
                      font=ctk.CTkFont("Segoe UI", 15, weight="bold"),
                      text_color=C_TEXT).pack(anchor="w", padx=18, pady=(18, 12))
+
+        def save():
+            self._cfg["open_output_after_process"] = bool(open_var.get())
+            self._cfg["auto_upload"] = bool(upload_var.get())
+            self._cfg["steam_community_auto_submit"] = bool(community_submit_var.get())
+            for key, entry in community_entries.items():
+                if key == "steam_community_title_template":
+                    val = entry.get()  # görünmez/boşluklu başlığı olduğu gibi koru
+                elif key == "steam_community_wait_after_upload_ms":
+                    try:
+                        val = int(entry.get().strip())
+                    except ValueError:
+                        val = 1200
+                else:
+                    val = entry.get().strip()
+                self._cfg[key] = val
+            for key, entry in entries.items():
+                self._cfg[key] = entry.get().strip()
+            save_config(self._cfg)
+            self._status.ok("Ayarlar kaydedildi")
+            win.destroy()
+
+        # Kaydet'i en alta sabitle: içerik uzasa da her zaman görünür
+        AnimButton(win, text="Kaydet", variant="accent",
+                   height=38, text_color=C_BG0,
+                   command=save).pack(side="bottom", fill="x", padx=18, pady=(10, 14))
+        ctk.CTkFrame(win, height=1, fg_color=C_BORDER).pack(
+            side="bottom", fill="x", padx=18, pady=(4, 0))
 
         open_var = BooleanVar(value=bool(self._cfg.get("open_output_after_process", False)))
         upload_var = BooleanVar(value=bool(self._cfg.get("auto_upload", False)))
@@ -2388,32 +2417,6 @@ class App(ctk.CTk):
                      text_color=C_DIM,
                      wraplength=380,
                      justify="left").pack(anchor="w", padx=18, pady=2)
-
-        def save():
-            self._cfg["open_output_after_process"] = bool(open_var.get())
-            self._cfg["auto_upload"] = bool(upload_var.get())
-            self._cfg["steam_community_auto_submit"] = bool(community_submit_var.get())
-            for key, entry in community_entries.items():
-                if key == "steam_community_title_template":
-                    val = entry.get()  # görünmez/boşluklu başlığı olduğu gibi koru
-                elif key == "steam_community_wait_after_upload_ms":
-                    try:
-                        val = int(entry.get().strip())
-                    except ValueError:
-                        val = 1200
-                else:
-                    val = entry.get().strip()
-                self._cfg[key] = val
-            for key, entry in entries.items():
-                self._cfg[key] = entry.get().strip()
-            save_config(self._cfg)
-            self._status.ok("Ayarlar kaydedildi")
-            win.destroy()
-
-        AnimButton(win, text="Kaydet",
-                   variant="accent",
-                   height=36, text_color=C_BG0,
-                   command=save).pack(fill="x", padx=18, pady=(18, 6))
 
     def _open_steam_api_panel(self):
         win = ctk.CTkToplevel(self)
@@ -2510,7 +2513,7 @@ class App(ctk.CTk):
     def _open_custom_template(self):
         win = ctk.CTkToplevel(self)
         win.title("Özel Şablon")
-        win.geometry("320x280")
+        win.geometry("340x368")
         win.configure(fg_color=C_BG1)
         win.grab_set()
 
@@ -2567,7 +2570,7 @@ class App(ctk.CTk):
     def _open_template_manager(self):
         win = ctk.CTkToplevel(self)
         win.title("Şablon Yönetimi")
-        win.geometry("420x430")
+        win.geometry("430x612")
         win.configure(fg_color=C_BG1)
         win.grab_set()
 
