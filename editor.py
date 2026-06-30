@@ -536,21 +536,21 @@ class TemplateCard(ctk.CTkFrame):
         icon = icons.get(template.get("mode", "uniform"), "◆")
 
         top = ctk.CTkFrame(self, fg_color="transparent")
-        top.pack(fill="x", padx=10, pady=(8, 2))
+        top.pack(fill="x", padx=11, pady=(10, 2))
 
-        ctk.CTkLabel(top, text=icon, font=ctk.CTkFont("Segoe UI", 18),
-                     text_color=C_ACCENT, width=28).pack(side="left")
+        ctk.CTkLabel(top, text=icon, font=ctk.CTkFont("Segoe UI Emoji", 16),
+                     text_color=C_ACCENT, width=22).pack(side="left", anchor="n")
         ctk.CTkLabel(top, text=template["name"],
                      font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
-                     text_color=C_TEXT, wraplength=160,
-                     justify="left").pack(side="left", padx=(4, 0))
+                     text_color=C_TEXT, wraplength=138,
+                     justify="left").pack(side="left", padx=(7, 0), anchor="n")
 
         # Alt bilgi
         info = self._info_text(template)
         ctk.CTkLabel(self, text=info,
                      font=ctk.CTkFont("Segoe UI", 9),
-                     text_color=C_DIM, justify="left").pack(
-                         anchor="w", padx=14, pady=(0, 8))
+                     text_color=C_DIM, justify="left",
+                     wraplength=176).pack(anchor="w", padx=14, pady=(0, 9))
 
         # Tıklama alanı
         for w in (self, *self.winfo_children()):
@@ -565,7 +565,8 @@ class TemplateCard(ctk.CTkFrame):
         m = t.get("mode")
         if m == "uniform":
             pw = t["width"] // t["parts"]
-            return f"{t['parts']} parça · {pw}px × dinamik · {'Patch ✓' if t.get('patch') else ''}"
+            base = f"{t['parts']} parça · {pw}px × dinamik"
+            return base + ("  ·  Patch ✓" if t.get("patch") else "")
         if m == "multi":
             return "506px + 100px · 2 parça · 800px yüksek"
         if m == "single":
@@ -622,18 +623,30 @@ class DropZone(ctk.CTkFrame):
 
         # İçerik — boş hal
         self._idle_frame = ctk.CTkFrame(self, fg_color="transparent")
+
+        badge = ctk.CTkFrame(self._idle_frame, width=86, height=86,
+                             corner_radius=43, fg_color=C_BG3)
+        badge.pack(pady=(10, 16))
+        badge.pack_propagate(False)
+        ctk.CTkLabel(badge, text="📂",
+                     font=ctk.CTkFont("Segoe UI Emoji", 36),
+                     text_color=C_ACC_LT).pack(expand=True)
+
         ctk.CTkLabel(self._idle_frame,
-                     text="📂",
-                     font=ctk.CTkFont("Segoe UI Emoji", 42),
-                     text_color=C_HINT).pack(pady=(30, 6))
+                     text="Görseli buraya sürükle",
+                     font=ctk.CTkFont("Segoe UI", 17, weight="bold"),
+                     text_color=C_TEXT).pack()
         ctk.CTkLabel(self._idle_frame,
-                     text="Dosya sürükle veya tıkla",
-                     font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
-                     text_color=C_DIM).pack()
-        ctk.CTkLabel(self._idle_frame,
-                     text="PNG · JPG · WEBP · GIF",
-                     font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=C_HINT).pack(pady=(2, 30))
+                     text="veya tıklayıp dosya seç",
+                     font=ctk.CTkFont("Segoe UI", 11),
+                     text_color=C_DIM).pack(pady=(3, 16))
+
+        pill = ctk.CTkFrame(self._idle_frame, fg_color=C_BG3, corner_radius=12)
+        pill.pack()
+        ctk.CTkLabel(pill, text="PNG    ·    JPG    ·    WEBP    ·    GIF",
+                     font=ctk.CTkFont("Segoe UI", 10, weight="bold"),
+                     text_color=C_DIM).pack(padx=16, pady=6)
+
         self._idle_frame.pack(expand=True)
 
         # Preview label
@@ -650,9 +663,15 @@ class DropZone(ctk.CTkFrame):
             pady=5)
 
         self.bind("<Button-1>", self._pick, add="+")
-        self._idle_frame.bind("<Button-1>", self._pick, add="+")
-        for child in self._idle_frame.winfo_children():
-            child.bind("<Button-1>", self._pick, add="+")
+
+        def _bind_click(w):
+            try:
+                w.bind("<Button-1>", self._pick, add="+")
+            except Exception:
+                pass
+            for c in w.winfo_children():
+                _bind_click(c)
+        _bind_click(self._idle_frame)
 
         # Drag & drop (kök pencerede tkdnd yüklüyse çalışır)
         try:
@@ -1109,8 +1128,8 @@ class App(ctk.CTk):
             except Exception as e:
                 print(f"[DND] tkdnd yüklenemedi, sürükle-bırak devre dışı: {e}")
         self.title("Steam Splitter PRO")
-        self.geometry("1280x760")
-        self.minsize(1000, 640)
+        self.geometry("1340x840")
+        self.minsize(1040, 700)
         self.configure(fg_color=C_BG1)
 
         self.current_path = None
@@ -1146,7 +1165,7 @@ class App(ctk.CTk):
                           corner_radius=0)
         sb.grid(row=0, column=0, sticky="nsew")
         sb.grid_propagate(False)
-        sb.grid_rowconfigure(6, weight=1)  # boşluk esnek
+        sb.grid_rowconfigure(3, weight=1)  # şablon kartları esner; araçlar+çıktı hep görünür
 
         # Logo
         logo_f = ctk.CTkFrame(sb, fg_color="transparent")
@@ -1169,13 +1188,13 @@ class App(ctk.CTk):
         # Şablon başlığı
         self._section_label(sb, "ŞABLON", row=2)
 
-        # Şablon kartları
+        # Şablon kartları (esnek alan: pencere kısaldıkça burası daralıp kayar)
         self._cards_frame = ctk.CTkScrollableFrame(
             sb, fg_color="transparent",
             scrollbar_button_color=C_BG4,
-            scrollbar_button_hover_color=C_BG5,
-            height=240)
-        self._cards_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 4))
+            scrollbar_button_hover_color=C_ACCENT,
+            height=180)
+        self._cards_frame.grid(row=3, column=0, sticky="nsew", padx=10, pady=(0, 4))
 
         self._cards = []
         self._rebuild_template_cards()
@@ -1199,9 +1218,6 @@ class App(ctk.CTk):
                    ).grid(row=5, column=0, sticky="ew",
                           padx=12, pady=(0, 8))
 
-        # Esnek boşluk
-        ctk.CTkFrame(sb, fg_color="transparent").grid(row=6, column=0, sticky="nsew")
-
         # Separator
         self._sep(sb, row=7)
 
@@ -1213,7 +1229,7 @@ class App(ctk.CTk):
 
         AnimButton(tools_f, text="🎮  Steam Çizim Sayfası",
                    nc=C_BG3, hc=C_BG4,
-                   height=34, corner_radius=8,
+                   height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
                    text_color=C_TEXT,
                    command=self._open_steam_artwork
@@ -1221,7 +1237,7 @@ class App(ctk.CTk):
 
         AnimButton(tools_f, text="📋  Notlar / Console Kodları",
                    nc=C_BG3, hc=C_BG4,
-                   height=34, corner_radius=8,
+                   height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
                    text_color=C_TEXT,
                    command=self._open_notes
@@ -1229,7 +1245,7 @@ class App(ctk.CTk):
 
         AnimButton(tools_f, text="🎬  GIF / WebP Maker",
                    nc=C_BG3, hc=C_BG4,
-                   height=34, corner_radius=8,
+                   height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
                    text_color=C_ACCENT,
                    command=self._open_gif_maker
@@ -1237,7 +1253,7 @@ class App(ctk.CTk):
 
         AnimButton(tools_f, text="Border FX",
                    nc=C_BG3, hc=C_BG4,
-                   height=34, corner_radius=8,
+                   height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
                    text_color=C_ACCENT,
                    command=self._open_border_fx
@@ -1245,7 +1261,7 @@ class App(ctk.CTk):
 
         AnimButton(tools_f, text="☁  Steam API Kontrol",
                    nc=C_BG3, hc=C_BG4,
-                   height=34, corner_radius=8,
+                   height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
                    text_color=C_TEXT,
                    command=self._open_steam_api_panel
@@ -1253,7 +1269,7 @@ class App(ctk.CTk):
 
         AnimButton(tools_f, text="🌐  Community Upload",
                    nc=C_BG3, hc=C_BG4,
-                   height=34, corner_radius=8,
+                   height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
                    text_color=C_ACCENT,
                    command=self._run_steam_community_upload
@@ -1261,7 +1277,7 @@ class App(ctk.CTk):
 
         self._resume_upload_btn = AnimButton(tools_f, text="↻  Upload Devam",
                    nc=C_BG3, hc=C_BG4,
-                   height=34, corner_radius=8,
+                   height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
                    text_color=C_TEXT,
                    command=self._resume_steam_community_upload
@@ -1271,7 +1287,7 @@ class App(ctk.CTk):
 
         AnimButton(tools_f, text="⚙  Ayarlar",
                    nc=C_BG3, hc=C_BG4,
-                   height=34, corner_radius=8,
+                   height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
                    text_color=C_TEXT,
                    command=self._open_settings
