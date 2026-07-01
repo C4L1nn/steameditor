@@ -648,3 +648,57 @@ def process_folder(folder: str, outdir: str, template: dict, cfg: dict | None = 
                 process_image(os.path.join(folder, f), outdir, template, cfg)
             )
     return created
+
+
+def split_multi_band(path: str, outdir: str, template: dict, band_count: int,
+                     cfg: dict | None = None, name_override: str | None = None):
+    """
+    TEK yüksek çözünürlüklü kaynağı üstten alta doğru `band_count` adet
+    BAĞIMSIZ target_h-yükseklik bandına ayırır, her bandı da uniform
+    şablonun `parts` sayısı kadar eşit dikey dilime böler (Steam Community
+    vitrinine sırayla yüklenince tek kesintisiz görsel gibi görünür).
+    Kaynağın boyu istenen bant sayısını karşılamıyorsa sığdığı kadar TAM
+    bant üretilir (kısmi/gerilmiş bant üretilmez) — çağıran taraf
+    len(created) // parts ile kaç bant üretildiğini anlayabilir.
+    """
+    if template["mode"] != "uniform":
+        raise ValueError("Çoklu bant sadece 'uniform' modundaki şablonlarda desteklenir")
+    if band_count < 1:
+        return []
+
+    os.makedirs(outdir, exist_ok=True)
+    base = name_override or os.path.splitext(os.path.basename(path))[0]
+    prefix = template.get("prefix", "parca")
+    target_w = template["width"]
+    target_h = template["height"]
+    parts = template["parts"]
+    slice_w = target_w // parts
+
+    original = Image.open(path).convert("RGBA")
+    scale = target_w / original.width if original.width else 1.0
+    scaled_h = max(1, int(original.height * scale))
+    tall_canvas = _apply_effects_pipeline(
+        original.resize((target_w, scaled_h), Image.LANCZOS), cfg)
+
+    available_bands = scaled_h // target_h
+    bands_to_make = min(band_count, available_bands)
+
+    created = []
+    for band in range(bands_to_make):
+        y1 = band * target_h
+        y2 = y1 + target_h
+        for i in range(parts):
+            x1 = i * slice_w
+            x2 = target_w if i == parts - 1 else x1 + slice_w
+            piece = tall_canvas.crop((x1, y1, x2, y2))
+            idx = band * parts + i + 1
+            fname = f"{prefix}_{base}_{idx:02}.png"
+            full = os.path.join(outdir, fname)
+            piece.save(full)
+
+            if template.get("patch"):
+                patch_png_last_byte(full)
+
+            created.append(full)
+
+    return created

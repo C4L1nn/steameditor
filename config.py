@@ -251,6 +251,7 @@ def load_config() -> dict:
         "text_overlay_opacity": 100,
         "auto_enhance_enabled": False,
         "auto_enhance_intensity": 50,
+        "multi_band_count": 3,
     }
     if not os.path.exists(_CONFIG_FILE):
         return defaults

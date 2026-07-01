@@ -56,6 +56,7 @@ from core import (
     render_template_preview,
     resize_cover,
     split_gif_frames,
+    split_multi_band,
     template_output_summary,
 )
 
@@ -2271,9 +2272,34 @@ class App(ctk.CTk):
                    command=self._manual_crop
                    ).grid(row=0, column=0, sticky="ew")
 
+        # Çoklu bant satırı: TEK yüksek çözünürlüklü kaynağı üstten alta
+        # doğru N adet bağımsız 5'li banda böler (Steam vitrinini tek
+        # fotoğrafla doldurmak için — bkz. split_multi_band).
+        btn_f3 = ctk.CTkFrame(main, fg_color="transparent")
+        btn_f3.grid(row=3, column=0, sticky="ew", pady=(6, 0))
+        btn_f3.grid_columnconfigure(2, weight=1)
+
+        ctk.CTkLabel(btn_f3, text="Bant sayısı",
+                     font=ctk.CTkFont("Segoe UI", 11),
+                     text_color=C_DIM).grid(row=0, column=0, padx=(2, 6))
+
+        self._band_entry = ctk.CTkEntry(btn_f3, fg_color=C_BG3, border_color=C_BORDER,
+                                        text_color=C_TEXT, height=36, width=48,
+                                        justify="center")
+        self._band_entry.insert(0, str(self._cfg.get("multi_band_count", 3)))
+        self._band_entry.grid(row=0, column=1, padx=(0, 8))
+
+        AnimButton(btn_f3,
+                   text="🧩  Çoklu Bant Böl (Vitrin Seti)",
+                   nc=C_BG3, hc=C_INDIGO,
+                   height=36,
+                   font=ctk.CTkFont("Segoe UI", 12),
+                   command=self._multi_band_split
+                   ).grid(row=0, column=2, sticky="ew")
+
         # Status bar
         self._status = StatusBar(main)
-        self._status.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        self._status.grid(row=4, column=0, sticky="ew", pady=(10, 0))
         self._status.set_right(self.template["name"])
 
     # ── Yardımcılar ───────────────────────────────────────
@@ -2549,6 +2575,62 @@ class App(ctk.CTk):
         if created:
             self._status.ok(f"Manuel: {len(created)} parça oluşturuldu ✓")
             self._show_split_preview(created)
+
+    def _multi_band_split(self):
+        """TEK yüksek çözünürlüklü kaynağı üstten alta doğru N adet bağımsız
+        5'li banda böler — Steam vitrinini aynı fotoğrafla tam doldurmak için
+        (bkz. core.split_multi_band)."""
+        if self._splitting:
+            self._status.error("Bir bölme işlemi zaten sürüyor")
+            return
+        if not self.current_path or os.path.isdir(self.current_path):
+            self._status.error("Çoklu Bant için tek bir resim seç")
+            return
+        if self.template["mode"] != "uniform":
+            self._status.error("Çoklu Bant sadece 5'li (uniform) şablonlarda çalışır")
+            return
+        try:
+            requested_bands = int(self._band_entry.get().strip())
+        except ValueError:
+            requested_bands = 0
+        if requested_bands < 1:
+            self._status.error("Geçerli bir bant sayısı gir (1 veya üstü)")
+            return
+
+        self._cfg["multi_band_count"] = requested_bands
+        save_config(self._cfg)
+
+        path = self.current_path
+        template = self.template
+        cfg = self._cfg
+        outdir = self.output_dir
+        parts = template["parts"]
+        self._splitting = True
+        self._status.busy("Çoklu bant bölünüyor...")
+
+        def worker():
+            try:
+                created = split_multi_band(path, outdir, template, requested_bands, cfg)
+                self.after(0, lambda: self._on_multi_band_done(created, requested_bands, parts))
+            except Exception as e:
+                self.after(0, lambda e=e: self._status.error(str(e)))
+            finally:
+                self.after(0, lambda: setattr(self, "_splitting", False))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_multi_band_done(self, created, requested_bands, parts):
+        if not created:
+            self._status.error("Çoklu bant bölme başarısız — kaynağın boyu 1 bant için bile yetersiz olabilir")
+            return
+        made_bands = len(created) // parts if parts else 0
+        if made_bands < requested_bands:
+            self._status.ok(
+                f"{len(created)} parça oluşturuldu ({made_bands}/{requested_bands} bant — "
+                f"kaynağın boyu daha fazlasına yetmedi) ✓")
+        else:
+            self._status.ok(f"{len(created)} parça oluşturuldu ({made_bands} bant) ✓")
+        self._show_split_preview(created)
 
     def _open_output_dir(self):
         open_folder(self.output_dir)

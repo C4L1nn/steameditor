@@ -354,6 +354,69 @@ def test_process_image_uniform_patch_sets_last_byte(tmp_path):
         assert data[-1] == 0x21
 
 
+# ── split_multi_band ───────────────────────────────────────
+
+def _striped_source(tmp_path, width=100, band_h=200, colors=((255, 0, 0), (0, 0, 255)), leftover=50):
+    """Her `band_h` satırlık şeridi farklı renkte olan bir test kaynağı üretir,
+    sonuna da bir sonraki tam bandı doldurmayan `leftover` piksellik bir
+    kalan ekler (banda dahil edilmemesi gerektiğini doğrulamak için)."""
+    total_h = band_h * len(colors) + leftover
+    img = Image.new("RGB", (width, total_h))
+    for i, color in enumerate(colors):
+        for y in range(i * band_h, (i + 1) * band_h):
+            for x in range(width):
+                img.putpixel((x, y), color)
+    src = tmp_path / "striped.png"
+    img.save(src)
+    return str(src)
+
+
+def test_split_multi_band_produces_requested_bands_when_source_fits(tmp_path):
+    src = _striped_source(tmp_path)
+    template = {"name": "t", "mode": "uniform", "width": 100, "height": 200, "parts": 2,
+                "patch": False, "prefix": "t"}
+    created = core.split_multi_band(src, str(tmp_path), template, 2, None)
+    assert len(created) == 4  # 2 bant x 2 parça
+
+
+def test_split_multi_band_caps_at_available_source_height(tmp_path):
+    """3 bant istense bile kaynak sadece 2 tam banda yetiyorsa 2 bant üretilmeli,
+    gerilmiş/kısmi bir 3. bant ASLA üretilmemeli."""
+    src = _striped_source(tmp_path)
+    template = {"name": "t", "mode": "uniform", "width": 100, "height": 200, "parts": 2,
+                "patch": False, "prefix": "t"}
+    created = core.split_multi_band(src, str(tmp_path), template, 3, None)
+    assert len(created) == 4  # istenen 3 değil, sığan 2 bant
+
+
+def test_split_multi_band_bands_contain_distinct_source_regions(tmp_path):
+    """2. bant 1. bandın kopyası olmamalı — gerçekten farklı bir dikey
+    aralıktan (kaynağın 200-400. satırları) kesilmeli."""
+    src = _striped_source(tmp_path)
+    template = {"name": "t", "mode": "uniform", "width": 100, "height": 200, "parts": 2,
+                "patch": False, "prefix": "t"}
+    created = sorted(core.split_multi_band(src, str(tmp_path), template, 2, None))
+    band1_part1 = Image.open(created[0]).convert("RGB").getpixel((5, 5))
+    band2_part1 = Image.open(created[2]).convert("RGB").getpixel((5, 5))
+    assert band1_part1 == (255, 0, 0)
+    assert band2_part1 == (0, 0, 255)
+    assert band1_part1 != band2_part1
+
+
+def test_split_multi_band_rejects_non_uniform_template(tmp_path):
+    src = _striped_source(tmp_path)
+    template = {"name": "t", "mode": "single", "width": 100, "height": 100, "prefix": "t"}
+    with pytest.raises(ValueError):
+        core.split_multi_band(src, str(tmp_path), template, 2, None)
+
+
+def test_split_multi_band_zero_bands_requested_returns_empty(tmp_path):
+    src = _striped_source(tmp_path)
+    template = {"name": "t", "mode": "uniform", "width": 100, "height": 200, "parts": 2,
+                "patch": False, "prefix": "t"}
+    assert core.split_multi_band(src, str(tmp_path), template, 0, None) == []
+
+
 def test_process_image_multi_creates_expected_sizes(tmp_path):
     src = tmp_path / "src.png"
     Image.new("RGB", (400, 300), (1, 2, 3)).save(src)
