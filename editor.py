@@ -2327,6 +2327,10 @@ class App(ctk.CTk):
                                         justify="center")
         self._band_entry.insert(0, str(self._cfg.get("multi_band_count", 3)))
         self._band_entry.grid(row=0, column=2)
+        # Bant sayısı değişince ana önizlemedeki bant grid'i canlı yenilensin
+        self._band_entry.bind("<KeyRelease>", lambda _e: (
+            self._load_preview(self.current_path)
+            if self.current_path and os.path.isfile(self.current_path) else None))
 
         # Status bar
         self._status = StatusBar(main)
@@ -2407,14 +2411,25 @@ class App(ctk.CTk):
         self._load_preview(valid[0])
         self._status.set(f"{len(valid)} dosya seçildi (toplu bölme)", C_TEXT, C_SUCCESS)
 
+    def _current_band_count(self) -> int:
+        entry = getattr(self, "_band_entry", None)
+        if entry is None:
+            return 1
+        try:
+            return max(1, int(entry.get().strip()))
+        except Exception:
+            return 1
+
     def _load_preview(self, path):
         try:
             img = Image.open(path)
             if hasattr(img, "n_frames") and img.n_frames > 1:
                 img.seek(0)
-            preview = render_template_preview(img, self.template, self._cfg)
+            bands = self._current_band_count()
+            preview = render_template_preview(img, self.template, self._cfg, band_count=bands)
             batch_count = len(self._batch_files) if self._batch_files else 0
-            self._drop.show_image(preview, template_output_summary(img, self.template),
+            self._drop.show_image(preview,
+                                  template_output_summary(img, self.template, band_count=bands),
                                   batch_count=batch_count)
         except Exception as e:
             self._status.error(f"Önizleme hatası: {e}")

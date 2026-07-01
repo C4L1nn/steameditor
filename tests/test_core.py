@@ -208,6 +208,36 @@ def test_uniform_last_box_absorbs_remainder_pixels():
     assert sum(widths) == 754
 
 
+def test_uniform_preview_multi_band_grid_boxes():
+    """band_count > 1: canvas native kalmalı, kutular üst-orta başlangıçlı
+    bant grid'i olmalı (bant2 kutuları target_h kadar aşağıda)."""
+    img = Image.new("RGB", (1000, 4000))
+    template = {"mode": "uniform", "width": 750, "height": 1250, "parts": 5}
+    canvas, boxes = core._template_preview_canvas(img, template, band_count=3)
+    assert canvas.size == (1000, 4000)  # native, cover-crop YOK
+    assert len(boxes) == 15  # 3 bant x 5 parça
+    x0 = (1000 - 750) // 2
+    assert boxes[0] == (x0, 0, x0 + 150, 1250)
+    assert boxes[5] == (x0, 1250, x0 + 150, 2500)   # 2. bandın ilk parçası
+    assert boxes[10] == (x0, 2500, x0 + 150, 3750)  # 3. bandın ilk parçası
+
+
+def test_uniform_preview_multi_band_caps_at_source_height():
+    """Kaynak sadece 2 tam banda yetiyorsa 3 istense de 2 bant çizilmeli."""
+    img = Image.new("RGB", (1000, 2600))
+    template = {"mode": "uniform", "width": 750, "height": 1250, "parts": 5}
+    _, boxes = core._template_preview_canvas(img, template, band_count=3)
+    assert len(boxes) == 10  # 2 bant x 5 parça
+
+
+def test_template_output_summary_mentions_band_count():
+    img = Image.new("RGB", (1000, 4000))
+    template = {"mode": "uniform", "width": 750, "height": 1250, "parts": 5, "patch": True}
+    summary = core.template_output_summary(img, template, band_count=3)
+    assert "15 parça" in summary
+    assert "3 bant" in summary
+
+
 def test_uniform_canvas_height_matches_template_not_source_aspect_ratio():
     """Regresyon: önizleme canvas'ı da (dolayısıyla 'ilk çıktı WxH' durum
     metni) kaynağın oranına göre değil, şablonun kendi height'ına göre

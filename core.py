@@ -345,8 +345,12 @@ def _apply_effects_pipeline(img: Image.Image, cfg: dict | None) -> Image.Image:
     return img
 
 
-def _template_preview_canvas(img: Image.Image, template: dict) -> tuple[Image.Image, list[tuple[int, int, int, int]]]:
-    """Şablonun kullanacağı canvas'ı ve parça kutularını üretir."""
+def _template_preview_canvas(img: Image.Image, template: dict,
+                             band_count: int = 1) -> tuple[Image.Image, list[tuple[int, int, int, int]]]:
+    """Şablonun kullanacağı canvas'ı ve parça kutularını üretir.
+    band_count > 1 (sadece uniform): kaynak NATIVE çözünürlükte bırakılır,
+    üst-orta başlangıçtan aşağıya doğru sığdığı kadar bant grid'i çizilir —
+    "Konumu Seç, Gerisini Otomatik Böl" akışının varsayılan yerleşimini gösterir."""
     img = img.convert("RGBA")
     mode = template["mode"]
 
@@ -354,10 +358,26 @@ def _template_preview_canvas(img: Image.Image, template: dict) -> tuple[Image.Im
         target_w = template["width"]
         target_h = template["height"]
         parts = template["parts"]
-        # Sabit target_w x target_h canvas'a cover-crop (multi/single ile
-        # tutarlı) — kaynağın kendi en-boy oranına göre değil.
-        canvas = resize_cover(img, target_w, target_h)
         slice_w = target_w // parts
+
+        if band_count > 1:
+            # Çoklu bant: canvas = kaynağın kendisi (native), kutular üst-orta
+            # başlangıçlı bant grid'i. Manuel crop da native pikselden keser.
+            w, h = img.size
+            x0 = max(0, (w - target_w) // 2)
+            full_bands = min(band_count, h // target_h) if target_h else 0
+            boxes = []
+            for band in range(max(1, full_bands)):
+                y1 = band * target_h
+                for i in range(parts):
+                    bx1 = x0 + i * slice_w
+                    bx2 = x0 + (target_w if i == parts - 1 else (i + 1) * slice_w)
+                    boxes.append((bx1, y1, bx2, y1 + target_h))
+            return img, boxes
+
+        # Tek bant: sabit target_w x target_h canvas'a cover-crop
+        # (multi/single ile tutarlı) — kaynağın kendi oranına göre değil.
+        canvas = resize_cover(img, target_w, target_h)
         boxes = [
             (i * slice_w, 0, (target_w if i == parts - 1 else (i + 1) * slice_w), target_h)
             for i in range(parts)
@@ -382,10 +402,12 @@ def _template_preview_canvas(img: Image.Image, template: dict) -> tuple[Image.Im
     return resize_cover(img, tw, th), [(0, 0, tw, th)]
 
 
-def render_template_preview(img: Image.Image, template: dict, border_cfg: dict | None = None) -> Image.Image:
+def render_template_preview(img: Image.Image, template: dict, border_cfg: dict | None = None,
+                            band_count: int = 1) -> Image.Image:
     """Bölmeden önce kesim çizgilerini görselin üstüne çizer."""
-    canvas, boxes = _template_preview_canvas(img, template)
+    canvas, boxes = _template_preview_canvas(img, template, band_count)
     canvas = _apply_effects_pipeline(canvas, border_cfg)
+    multi_band = band_count > 1 and template.get("mode") == "uniform"
     overlay = canvas.copy()
     shade = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
     shade_draw = ImageDraw.Draw(shade)
@@ -403,7 +425,9 @@ def render_template_preview(img: Image.Image, template: dict, border_cfg: dict |
     for i, box in enumerate(boxes, start=1):
         x1, y1, x2, y2 = box
         draw.rectangle((x1, y1, x2 - 1, y2 - 1), outline=line_color, width=3)
-        if i > 1:
+        if i > 1 and not multi_band:
+            # Tam-yükseklik dikey çizgi tek bantta anlamlı; çoklu bantta her
+            # kutunun kendi çerçevesi grid'i zaten netleştiriyor.
             draw.line((x1, 0, x1, overlay.height), fill=line_color, width=3)
         label = f"#{i}"
         lx = x1 + 8
@@ -415,14 +439,18 @@ def render_template_preview(img: Image.Image, template: dict, border_cfg: dict |
     return overlay
 
 
-def template_output_summary(img: Image.Image, template: dict) -> str:
-    canvas, boxes = _template_preview_canvas(img, template)
+def template_output_summary(img: Image.Image, template: dict, band_count: int = 1) -> str:
+    canvas, boxes = _template_preview_canvas(img, template, band_count)
     if not boxes:
         return ""
     first_w = boxes[0][2] - boxes[0][0]
     first_h = boxes[0][3] - boxes[0][1]
-    mode = template.get("mode", "")
     patch = " · patch açık" if template.get("patch") else ""
+    parts = template.get("parts")
+    if band_count > 1 and template.get("mode") == "uniform" and isinstance(parts, int) and parts:
+        bands = len(boxes) // parts
+        return (f"{len(boxes)} parça ({bands} bant) · parça {first_w}×{first_h}px"
+                f" · kaynak {canvas.width}×{canvas.height}px{patch}")
     return f"{len(boxes)} parça · ilk çıktı {first_w}×{first_h}px · canvas {canvas.width}×{canvas.height}px{patch}"
 
 
