@@ -803,9 +803,15 @@ class FixedCropDialog(Toplevel):
         self.canvas.bind("<Button-1>",      self._click)
         self.bind("<Return>", self._enter)
         self.bind("<Escape>", self._cancel)
+        # Ok tuşları: kutuyu orijinal görsel pikselinde 1px (Shift ile 10px)
+        # kaydır — ezgif'teki sayısal Left/Top girme hassasiyetinin karşılığı.
+        for key, dx, dy in (("Left", -1, 0), ("Right", 1, 0), ("Up", 0, -1), ("Down", 0, 1)):
+            self.bind(f"<{key}>", lambda _e, dx=dx, dy=dy: self._nudge(dx, dy))
+            self.bind(f"<Shift-{key}>", lambda _e, dx=dx, dy=dy: self._nudge(dx * 10, dy * 10))
+        self.focus_force()
 
         # hint
-        hint = ctk.CTkLabel(self, text="Scroll → zoom   |   Orta tık sürükle → pan   |   Sol tık → kareyi taşı   |   Enter → onayla",
+        hint = ctk.CTkLabel(self, text="Scroll → zoom   |   Orta tık → pan   |   Sol tık → kareyi taşı   |   Ok tuşları → 1px (Shift: 10px)   |   Enter → onayla",
                              font=ctk.CTkFont("Segoe UI", 9),
                              text_color=C_DIM, fg_color=C_BG2)
         hint.pack(fill="x", pady=0)
@@ -881,6 +887,20 @@ class FixedCropDialog(Toplevel):
         x1 = max(0, min(sw - tw, cx - tw/2))
         y1 = max(0, min(sh - th, cy - th/2))
         self.canvas.coords(self.rect_id, x1, y1, x1+tw, y1+th)
+        self.box_x = x1 / self.scale
+        self.box_y = y1 / self.scale
+
+    def _nudge(self, dx: int, dy: int):
+        """Kutuyu orijinal görsel piksel uzayında dx/dy kadar kaydırır."""
+        if not self.rect_id:
+            return
+        sw = self.image.width * self.scale
+        sh = self.image.height * self.scale
+        tw = self.target_w * self.scale
+        th = self.target_h * self.scale
+        x1 = max(0.0, min(sw - tw, (self.box_x + dx) * self.scale))
+        y1 = max(0.0, min(sh - th, (self.box_y + dy) * self.scale))
+        self.canvas.coords(self.rect_id, x1, y1, x1 + tw, y1 + th)
         self.box_x = x1 / self.scale
         self.box_y = y1 / self.scale
 
@@ -2047,6 +2067,11 @@ class App(ctk.CTk):
 
         self._build()
 
+        # Klavye kısayolları: Ctrl+O dosya seç, Ctrl+Enter böl, Esc geri
+        self.bind("<Control-o>", lambda _e: self._pick_file())
+        self.bind("<Control-Return>", lambda _e: self._split_single())
+        self.bind("<Escape>", self._on_escape)
+
         if preload_path and os.path.isfile(preload_path):
             # Pencere tam çizilmeden önizleme boyutlandırması yanlış çıkmasın diye
             # mainloop başladıktan sonraya ertele.
@@ -2077,6 +2102,34 @@ class App(ctk.CTk):
     def _close_settings_page(self):
         self._settings_page.grid_remove()
         self._main.grid()
+
+    def _on_escape(self, _=None):
+        """Esc: ayarlar sayfası açıksa ona, değilse split önizlemeden drop'a dön.
+        grid_info() kullanılır (grid_remove sonrası boş döner) — winfo_ismapped
+        pencere simge durumundayken/gizliyken her zaman 0 döndüğü için yanıltıcı."""
+        if self._settings_page.grid_info():
+            self._settings_page._back()
+        elif self._split_prev.grid_info():
+            self._back_to_drop()
+
+    def _notify_attention(self):
+        """Uzun bir iş bitince ses + görev çubuğunda yanıp sönme.
+        Bağımlılıksız (winsound + user32.FlashWindow); pencere zaten
+        öndeyse sadece ses duyulur."""
+        try:
+            import winsound
+            winsound.MessageBeep(winsound.MB_ICONASTERISK)
+        except Exception:
+            try:
+                self.bell()
+            except Exception:
+                pass
+        try:
+            import ctypes
+            hwnd = ctypes.windll.user32.GetAncestor(self.winfo_id(), 2)  # GA_ROOT
+            ctypes.windll.user32.FlashWindow(hwnd, True)
+        except Exception:
+            pass
 
     # ── SIDEBAR ───────────────────────────────────────────
     def _build_sidebar(self):
@@ -3015,6 +3068,8 @@ class App(ctk.CTk):
             else:
                 win._status_lbl.configure(text="Kuyruk tamamlandı", text_color=C_SUCCESS)
                 win._bar.set(1.0)
+        if not cancelled:
+            self._notify_attention()
         if cancelled:
             self._status.error("Toplu upload kuyruğu iptal edildi")
         else:
