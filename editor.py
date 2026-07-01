@@ -115,14 +115,7 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
     # Tüm parçaları tek listede tut
     if mode == "uniform":
         pw = template["width"] // template["parts"]
-        # Dinamik yükseklik: otomatik bölme ile tutarlı olması için
-        # resmin gerçek boyutuna göre hesapla
-        img_temp = Image.open(img_path)
-        orig_w, orig_h = img_temp.size
-        target_w = template["width"]
-        aspect_ratio = orig_h / orig_w if orig_w else 1.0
-        ph = int(target_w * aspect_ratio)
-        img_temp.close()
+        ph = template["height"]  # sabit — otomatik Böl ile tutarlı (cover-crop)
         parts_info = [{"width": pw, "height": ph} for _ in range(template["parts"])]
     elif mode == "multi":
         parts_info = template["parts"]

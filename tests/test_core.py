@@ -165,7 +165,7 @@ def test_effects_pipeline_text_reads_coherently_across_uniform_parts(tmp_path):
         "text_overlay_color": "#FACC15", "text_overlay_size": 8,
         "text_overlay_position": "Alt Orta", "text_overlay_opacity": 100,
     }
-    template = {"name": "t", "mode": "uniform", "width": 750, "parts": 5,
+    template = {"name": "t", "mode": "uniform", "width": 750, "height": 1250, "parts": 5,
                 "patch": False, "prefix": "t"}
     created = sorted(core.process_image(str(src), str(tmp_path), template, cfg))
     assert len(created) == 5
@@ -188,7 +188,7 @@ def test_effects_pipeline_text_reads_coherently_across_uniform_parts(tmp_path):
 
 def test_uniform_boxes_cover_full_width_when_divisible():
     img = Image.new("RGB", (1000, 800))
-    template = {"mode": "uniform", "width": 750, "parts": 5}
+    template = {"mode": "uniform", "width": 750, "height": 1250, "parts": 5}
     canvas, boxes = core._template_preview_canvas(img, template)
     assert len(boxes) == 5
     assert boxes[0][0] == 0
@@ -201,11 +201,22 @@ def test_uniform_boxes_cover_full_width_when_divisible():
 def test_uniform_last_box_absorbs_remainder_pixels():
     # 754 // 5 = 150 kalan 4 -> son parça 150+4=154 olmalı, piksel kaybı olmamalı
     img = Image.new("RGB", (1000, 800))
-    template = {"mode": "uniform", "width": 754, "parts": 5}
+    template = {"mode": "uniform", "width": 754, "height": 1250, "parts": 5}
     _, boxes = core._template_preview_canvas(img, template)
     widths = [b[2] - b[0] for b in boxes]
     assert widths == [150, 150, 150, 150, 154]
     assert sum(widths) == 754
+
+
+def test_uniform_canvas_height_matches_template_not_source_aspect_ratio():
+    """Regresyon: önizleme canvas'ı da (dolayısıyla 'ilk çıktı WxH' durum
+    metni) kaynağın oranına göre değil, şablonun kendi height'ına göre
+    üretilmeli — bkz. test_process_image_uniform_uses_template_height_..."""
+    wide_img = Image.new("RGB", (5120, 2880))  # 16:9, hedeften çok farklı oran
+    template = {"mode": "uniform", "width": 750, "height": 1250, "parts": 5}
+    canvas, boxes = core._template_preview_canvas(wide_img, template)
+    assert canvas.size == (750, 1250)
+    assert boxes[0] == (0, 0, 150, 1250)
 
 
 def test_multi_boxes_match_part_definitions():
@@ -229,7 +240,7 @@ def test_single_box_is_full_canvas():
 
 def test_template_output_summary_mentions_part_count_and_patch():
     img = Image.new("RGB", (1000, 800))
-    template = {"mode": "uniform", "width": 750, "parts": 5, "patch": True}
+    template = {"mode": "uniform", "width": 750, "height": 1250, "parts": 5, "patch": True}
     summary = core.template_output_summary(img, template)
     assert "5 parça" in summary
     assert "patch açık" in summary
@@ -276,12 +287,28 @@ def test_save_animated_gif_opaque_frames_no_crash(tmp_path):
 def test_process_image_uniform_remainder_pixels(tmp_path):
     src = tmp_path / "src.png"
     Image.new("RGB", (1508, 1000), (200, 100, 50)).save(src)
-    template = {"name": "t", "mode": "uniform", "width": 754, "parts": 5,
+    template = {"name": "t", "mode": "uniform", "width": 754, "height": 1250, "parts": 5,
                 "patch": False, "prefix": "t"}
     created = core.process_image(str(src), str(tmp_path), template, None)
     widths = [Image.open(p).size[0] for p in created]
     assert widths == [150, 150, 150, 150, 154]
     assert sum(widths) == 754
+
+
+def test_process_image_uniform_uses_template_height_not_source_aspect_ratio(tmp_path):
+    """Regresyon: uniform mod kaynağın KENDİ en-boy oranına göre 'dinamik'
+    yükseklik hesaplıyordu, şablonun kendi height alanını yok sayıyordu.
+    Geniş (16:9) bir kaynakta bu, her parçayı 150x421 gibi sıkışık bir
+    şeride çeviriyor, içeriğin çoğu boş/karanlık kenar parçalara düşüyordu.
+    Şablonun height'ı (1250) kaynağın oranından BAĞIMSIZ olarak korunmalı
+    (resize_cover ile cover-crop, multi/single modlarıyla tutarlı)."""
+    src = tmp_path / "wide_16_9.png"
+    Image.new("RGB", (5120, 2880), (200, 100, 50)).save(src)
+    template = {"name": "t", "mode": "uniform", "width": 750, "height": 1250, "parts": 5,
+                "patch": False, "prefix": "t"}
+    created = core.process_image(str(src), str(tmp_path), template, None)
+    sizes = [Image.open(p).size for p in created]
+    assert sizes == [(150, 1250)] * 5
 
 
 def test_process_image_name_override_used_for_output_filename(tmp_path):
@@ -317,7 +344,7 @@ def test_process_image_name_override_prevents_collision_between_sources(tmp_path
 def test_process_image_uniform_patch_sets_last_byte(tmp_path):
     src = tmp_path / "src.png"
     Image.new("RGB", (750, 500), (0, 0, 0)).save(src)
-    template = {"name": "t", "mode": "uniform", "width": 750, "parts": 5,
+    template = {"name": "t", "mode": "uniform", "width": 750, "height": 1250, "parts": 5,
                 "patch": True, "prefix": "t"}
     created = core.process_image(str(src), str(tmp_path), template, None)
     assert len(created) == 5
@@ -365,7 +392,7 @@ def test_split_gif_frames_uniform_produces_animated_parts(tmp_path):
         src, save_all=True, append_images=[f.convert("RGB") for f in frames[1:]],
         duration=[80, 80, 80], loop=0)
 
-    template = {"name": "t", "mode": "uniform", "width": 40, "parts": 2,
+    template = {"name": "t", "mode": "uniform", "width": 40, "height": 40, "parts": 2,
                 "patch": False, "prefix": "t"}
     created = core.split_gif_frames(str(src), str(tmp_path), template, None)
     assert len(created) == 2

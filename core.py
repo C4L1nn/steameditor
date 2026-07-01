@@ -348,14 +348,14 @@ def _template_preview_canvas(img: Image.Image, template: dict) -> tuple[Image.Im
 
     if mode == "uniform":
         target_w = template["width"]
+        target_h = template["height"]
         parts = template["parts"]
-        orig_w, orig_h = img.size
-        aspect_ratio = orig_h / orig_w if orig_w else 1.0
-        dynamic_h = max(1, int(target_w * aspect_ratio))
-        canvas = img.resize((target_w, dynamic_h), Image.LANCZOS)
+        # Sabit target_w x target_h canvas'a cover-crop (multi/single ile
+        # tutarlı) — kaynağın kendi en-boy oranına göre değil.
+        canvas = resize_cover(img, target_w, target_h)
         slice_w = target_w // parts
         boxes = [
-            (i * slice_w, 0, (target_w if i == parts - 1 else (i + 1) * slice_w), dynamic_h)
+            (i * slice_w, 0, (target_w if i == parts - 1 else (i + 1) * slice_w), target_h)
             for i in range(parts)
         ]
         return canvas, boxes
@@ -483,25 +483,23 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
     if not frames:
         return created_files
 
-    orig_w, orig_h = frames[0].size
-
     # -------------------------------------------------------
     # MODE: UNIFORM
     # -------------------------------------------------------
     if mode == "uniform":
         target_w = template["width"]
+        target_h = template["height"]
         parts = template["parts"]
         slice_w = target_w // parts
 
-        aspect_ratio = orig_h / orig_w if orig_w else 1.0
-        dynamic_h = int(target_w * aspect_ratio)
-
-        scaled = [_apply_effects_pipeline(f.resize((target_w, dynamic_h), Image.LANCZOS), cfg) for f in frames]
+        # Sabit target_w x target_h canvas'a cover-crop — process_image
+        # ve multi/single modlarıyla tutarlı (bkz. resize_cover).
+        scaled = [_apply_effects_pipeline(resize_cover(f, target_w, target_h), cfg) for f in frames]
 
         for i in range(parts):
             x1 = i * slice_w
             x2 = target_w if i == parts - 1 else x1 + slice_w
-            part_frames = [fr.crop((x1, 0, x2, dynamic_h)) for fr in scaled]
+            part_frames = [fr.crop((x1, 0, x2, target_h)) for fr in scaled]
             outpath = os.path.join(outdir, f"{prefix}_{base}_{i+1:02}.gif")
             _save_animated_gif(part_frames, durations, outpath, False)
             optimize_gif_file(outpath)
@@ -570,27 +568,29 @@ def process_image(path: str, outdir: str, template: dict, cfg: dict | None = Non
     mode = template["mode"]
 
     original = Image.open(path).convert("RGBA")
-    orig_w, orig_h = original.size
 
     # -------------------------------
-    # MODE: UNIFORM (Workshop 5'li) - DİNAMİK YÜKSEKLİK
+    # MODE: UNIFORM (Workshop 5'li) - SABİT CANVAS (cover-crop)
     # -------------------------------
     if mode == "uniform":
-        target_w = template["width"]  # Genelde 750px (5x150)
+        target_w = template["width"]   # Genelde 750px (5x150)
+        target_h = template["height"]  # Genelde 1250px
         parts = template["parts"]
 
-        # Resmi genişliğe (750px) oturt, yükseklik oranlı
-        aspect_ratio = orig_h / orig_w if orig_w else 1.0
-        dynamic_h = int(target_w * aspect_ratio)
-
-        img = _apply_effects_pipeline(original.resize((target_w, dynamic_h), Image.LANCZOS), cfg)
+        # Sabit target_w x target_h canvas'a oranı bozmadan KIRPARAK (cover)
+        # otur — kaynağın kendi en-boy oranına göre "dinamik" yükseklik
+        # DEĞİL. Aksi halde geniş/dar oranlı kaynaklarda çoğu parça boş/
+        # karanlık kenara düşüyordu (bkz. steam_splitter_presets.json'daki
+        # "Steam 150x1250 (5)" preseti: height=1250 kayıtlı ama eskiden
+        # hiç kullanılmıyordu).
+        img = _apply_effects_pipeline(resize_cover(original, target_w, target_h), cfg)
 
         slice_w = target_w // parts
 
         for i in range(parts):
             x1 = i * slice_w
             x2 = target_w if i == parts - 1 else x1 + slice_w
-            piece = img.crop((x1, 0, x2, dynamic_h))
+            piece = img.crop((x1, 0, x2, target_h))
             fname = f"{prefix}_{base}_{i+1:02}.png"
             full = os.path.join(outdir, fname)
             piece.save(full)
