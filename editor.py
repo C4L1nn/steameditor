@@ -44,7 +44,7 @@ from core import (
     _parse_hex_color,
     _save_animated_gif,
     _template_preview_canvas,
-    apply_border_fx,
+    _apply_effects_pipeline,
     find_gifsicle,
     list_border_templates,
     open_folder,
@@ -96,7 +96,7 @@ def make_ctk_image(img: Image.Image, size: tuple[int, int] | None = None) -> ctk
     return ctk.CTkImage(light_image=img, dark_image=img, size=size)
 
 
-def manual_crop_with_template(master, img_path: str, outdir: str, template: dict):
+def manual_crop_with_template(master, img_path: str, outdir: str, template: dict, cfg: dict | None = None):
     """
     Manuel crop modu:
     - Kullanıcı sadece İLK parçanın alanını seçer.
@@ -130,6 +130,7 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
         parts_info = [{"width": template["width"], "height": template["height"]}]
 
     img = Image.open(img_path).convert("RGBA")
+    img = _apply_effects_pipeline(img, cfg)
     img_w, img_h = img.size
 
     # Sadece ilk parça için kullanıcıdan seçim al
@@ -760,6 +761,12 @@ class FixedCropDialog(Toplevel):
         self.max_scale = 4.0
         self.result_bbox = None
 
+        # Kırpma kutusunun konumu ORİJİNAL görsel piksel uzayında tutulur
+        # (scale'den bağımsız); böylece zoom (_redraw) kullanıcının
+        # sürükleyip bıraktığı yeri unutup merkeze sıçramaz.
+        self.box_x = max(0, (image.width - target_w) / 2)
+        self.box_y = max(0, (image.height - target_h) / 2)
+
         self.canvas = Canvas(self, bg=C_BG0, cursor="crosshair",
                              highlightthickness=0)
         self.canvas.pack(fill="both", expand=True)
@@ -811,8 +818,8 @@ class FixedCropDialog(Toplevel):
         self.canvas.configure(scrollregion=(0, 0, sw, sh))
         tw = self.target_w * self.scale
         th = self.target_h * self.scale
-        x1 = max(0, (sw - tw) / 2)
-        y1 = max(0, (sh - th) / 2)
+        x1 = max(0, min(sw - tw, self.box_x * self.scale))
+        y1 = max(0, min(sh - th, self.box_y * self.scale))
         # Gölge efekti
         self.canvas.create_rectangle(
             x1+2, y1+2, x1+tw+2, y1+th+2,
@@ -849,6 +856,8 @@ class FixedCropDialog(Toplevel):
         x1 = max(0, min(sw - tw, cx - tw/2))
         y1 = max(0, min(sh - th, cy - th/2))
         self.canvas.coords(self.rect_id, x1, y1, x1+tw, y1+th)
+        self.box_x = x1 / self.scale
+        self.box_y = y1 / self.scale
 
     def _snap(self, anchor):
         if not self.rect_id:
@@ -871,6 +880,8 @@ class FixedCropDialog(Toplevel):
         elif anchor == "bottom":
             y1 = max(0, sh - th)
         self.canvas.coords(self.rect_id, x1, y1, x1 + tw, y1 + th)
+        self.box_x = x1 / self.scale
+        self.box_y = y1 / self.scale
 
     def _enter(self, _=None):
         if self.rect_id:
@@ -2541,7 +2552,7 @@ class App(ctk.CTk):
             self._status.error("Manuel crop için tek resim seç")
             return
         created = manual_crop_with_template(
-            self, self.current_path, self.output_dir, self.template)
+            self, self.current_path, self.output_dir, self.template, self._cfg)
         if created:
             self._status.ok(f"Manuel: {len(created)} parça oluşturuldu ✓")
             self._show_split_preview(created)
