@@ -97,11 +97,18 @@ def make_ctk_image(img: Image.Image, size: tuple[int, int] | None = None) -> ctk
     return ctk.CTkImage(light_image=img, dark_image=img, size=size)
 
 
-def manual_crop_with_template(master, img_path: str, outdir: str, template: dict, cfg: dict | None = None):
+def manual_crop_with_template(master, img_path: str, outdir: str, template: dict,
+                              cfg: dict | None = None, band_count: int = 1):
     """
     Manuel crop modu:
-    - Kullanıcı sadece İLK parçanın alanını seçer.
-    - Diğer parçalar şablon genişliklerine göre sağa doğru otomatik kesilir.
+    - Kullanıcı sadece İLK bandın İLK parçasının alanını (başlangıç
+      pozisyonunu) seçer — tıpkı ezgif'te elle yaptığı gibi.
+    - Diğer parçalar aynı bant içinde şablon genişliklerine göre sağa
+      doğru otomatik kesilir.
+    - `band_count` > 1 ve şablon 'uniform' ise, seçilen başlangıç konumundan
+      aşağıya doğru (her biri template height kadar) toplam band_count adet
+      bağımsız bant daha otomatik üretilir (kaynağın boyu yetmediği yerde
+      sessizce durur, kısmi/gerilmiş bant üretilmez).
     """
     os.makedirs(outdir, exist_ok=True)
     base = os.path.splitext(os.path.basename(img_path))[0]
@@ -118,20 +125,30 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
         pw = template["width"] // template["parts"]
         ph = template["height"]  # sabit — otomatik Böl ile tutarlı (cover-crop)
         parts_info = [{"width": pw, "height": ph} for _ in range(template["parts"])]
-    elif mode == "multi":
-        parts_info = template["parts"]
-    else:  # single
-        parts_info = [{"width": template["width"], "height": template["height"]}]
+        band_h = template["height"]
+    else:
+        # Çoklu bant kavramı sadece 'uniform' (eşit parçalı) şablonlarda
+        # anlamlı; diğer modlarda tek bant gibi davran.
+        band_count = 1
+        band_h = 0
+        if mode == "multi":
+            parts_info = template["parts"]
+        else:  # single
+            parts_info = [{"width": template["width"], "height": template["height"]}]
 
     img = Image.open(img_path).convert("RGBA")
     img = _apply_effects_pipeline(img, cfg)
     img_w, img_h = img.size
 
-    # Sadece ilk parça için kullanıcıdan seçim al
+    # Sadece ilk bandın ilk parçası için kullanıcıdan seçim al
     first = parts_info[0]
     tw = first["width"]
     th = first["height"]
-    title = f"Başlangıç - {tw}x{th} alanını seç (ENTER ile onayla)"
+    if band_count > 1:
+        title = (f"Başlangıç (1. Bant) - {tw}x{th} alanını seç — aşağıya doğru "
+                 f"{band_count} bant otomatik devam edecek (ENTER ile onayla)")
+    else:
+        title = f"Başlangıç - {tw}x{th} alanını seç (ENTER ile onayla)"
     dlg = FixedCropDialog(master, img, tw, th, title=title)
     bbox = dlg.get_bbox()
     if not bbox:
@@ -142,34 +159,44 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
     base_y = y1
 
     created = []
-    cur_x = base_x
+    idx = 1
 
-    for idx, part in enumerate(parts_info, start=1):
-        pw = part["width"]
-        ph = part["height"]
+    for band in range(max(1, band_count)):
+        band_y = base_y + band * band_h
+        # Otomatik devam eden bantlar (ilk banttan sonrakiler) kaynağa tam
+        # sığmıyorsa kısmi/gerilmiş bant üretmeden sessizce dur.
+        if band > 0 and band_y + band_h > img_h:
+            break
 
-        px1 = cur_x
-        py1 = base_y
+        cur_x = base_x
+        for part in parts_info:
+            pw = part["width"]
+            ph = part["height"]
 
-        # Taşma kontrolü (sağ kenar / alt kenar)
-        if px1 + pw > img_w:
-            px1 = max(0, img_w - pw)
-        if py1 + ph > img_h:
-            py1 = max(0, img_h - ph)
+            px1 = cur_x
+            py1 = band_y
 
-        px2 = px1 + pw
-        py2 = py1 + ph
+            # Taşma kontrolü (sağ kenar / alt kenar) — sadece ilk bant için,
+            # kullanıcının kendi seçtiği konumu makul ölçüde tolere eder.
+            if px1 + pw > img_w:
+                px1 = max(0, img_w - pw)
+            if py1 + ph > img_h:
+                py1 = max(0, img_h - ph)
 
-        piece = img.crop((px1, py1, px2, py2))
-        fname = f"{prefix}_{base}_{idx:02}.png"
-        full = os.path.join(outdir, fname)
-        piece.save(full)
+            px2 = px1 + pw
+            py2 = py1 + ph
 
-        if template.get("patch"):
-            patch_png_last_byte(full)
+            piece = img.crop((px1, py1, px2, py2))
+            fname = f"{prefix}_{base}_{idx:02}.png"
+            full = os.path.join(outdir, fname)
+            piece.save(full)
 
-        created.append(full)
-        cur_x += pw  # sonraki parçayı sağa kaydır
+            if template.get("patch"):
+                patch_png_last_byte(full)
+
+            created.append(full)
+            idx += 1
+            cur_x += pw  # sonraki parçayı sağa kaydır
 
     return created
 
@@ -2259,43 +2286,46 @@ class App(ctk.CTk):
                    command=self._split_batch
                    ).grid(row=0, column=3, sticky="ew", padx=5)
 
-        # Manuel crop ayrı satır
+        # Manuel crop satırı: kullanıcı başlangıç konumunu KENDİ seçer
+        # (ezgif'teki Left/Top kırpması gibi); "Bant sayısı" burada da
+        # geçerlidir — 1'den büyükse seçilen konumdan aşağıya doğru N bant
+        # otomatik devam eder (bkz. manual_crop_with_template).
         btn_f2 = ctk.CTkFrame(main, fg_color="transparent")
         btn_f2.grid(row=2, column=0, sticky="ew", pady=(6, 0))
         btn_f2.grid_columnconfigure(0, weight=1)
 
         AnimButton(btn_f2,
-                   text="🎯  Manuel Crop (Oto-Parça)",
+                   text="🎯  Manuel Crop (Konumu Sen Seç)",
                    nc=C_BG3, hc=C_INDIGO,
                    height=36,
                    font=ctk.CTkFont("Segoe UI", 12),
                    command=self._manual_crop
-                   ).grid(row=0, column=0, sticky="ew")
+                   ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
-        # Çoklu bant satırı: TEK yüksek çözünürlüklü kaynağı üstten alta
-        # doğru N adet bağımsız 5'li banda böler (Steam vitrinini tek
-        # fotoğrafla doldurmak için — bkz. split_multi_band).
-        btn_f3 = ctk.CTkFrame(main, fg_color="transparent")
-        btn_f3.grid(row=3, column=0, sticky="ew", pady=(6, 0))
-        btn_f3.grid_columnconfigure(2, weight=1)
-
-        ctk.CTkLabel(btn_f3, text="Bant sayısı",
+        ctk.CTkLabel(btn_f2, text="Bant sayısı",
                      font=ctk.CTkFont("Segoe UI", 11),
-                     text_color=C_DIM).grid(row=0, column=0, padx=(2, 6))
+                     text_color=C_DIM).grid(row=0, column=1, padx=(2, 6))
 
-        self._band_entry = ctk.CTkEntry(btn_f3, fg_color=C_BG3, border_color=C_BORDER,
+        self._band_entry = ctk.CTkEntry(btn_f2, fg_color=C_BG3, border_color=C_BORDER,
                                         text_color=C_TEXT, height=36, width=48,
                                         justify="center")
         self._band_entry.insert(0, str(self._cfg.get("multi_band_count", 3)))
-        self._band_entry.grid(row=0, column=1, padx=(0, 8))
+        self._band_entry.grid(row=0, column=2)
+
+        # Çoklu bant satırı: konumlamayla uğraşmadan, TEK yüksek çözünürlüklü
+        # kaynağı OTOMATİK ORTALANMIŞ şekilde üstten alta doğru (yukarıdaki
+        # "Bant sayısı" kadar) banda böler (bkz. split_multi_band).
+        btn_f3 = ctk.CTkFrame(main, fg_color="transparent")
+        btn_f3.grid(row=3, column=0, sticky="ew", pady=(6, 0))
+        btn_f3.grid_columnconfigure(0, weight=1)
 
         AnimButton(btn_f3,
-                   text="🧩  Çoklu Bant Böl (Vitrin Seti)",
+                   text="🧩  Çoklu Bant Böl (Otomatik Ortalanmış)",
                    nc=C_BG3, hc=C_INDIGO,
                    height=36,
                    font=ctk.CTkFont("Segoe UI", 12),
                    command=self._multi_band_split
-                   ).grid(row=0, column=2, sticky="ew")
+                   ).grid(row=0, column=0, sticky="ew")
 
         # Status bar
         self._status = StatusBar(main)
@@ -2570,10 +2600,18 @@ class App(ctk.CTk):
         if not self.current_path or os.path.isdir(self.current_path):
             self._status.error("Manuel crop için tek resim seç")
             return
+        try:
+            band_count = max(1, int(self._band_entry.get().strip()))
+        except ValueError:
+            band_count = 1
         created = manual_crop_with_template(
-            self, self.current_path, self.output_dir, self.template, self._cfg)
+            self, self.current_path, self.output_dir, self.template, self._cfg, band_count)
         if created:
-            self._status.ok(f"Manuel: {len(created)} parça oluşturuldu ✓")
+            if band_count > 1 and self.template["mode"] == "uniform":
+                made_bands = len(created) // self.template["parts"]
+                self._status.ok(f"Manuel: {len(created)} parça oluşturuldu ({made_bands} bant) ✓")
+            else:
+                self._status.ok(f"Manuel: {len(created)} parça oluşturuldu ✓")
             self._show_split_preview(created)
 
     def _multi_band_split(self):
