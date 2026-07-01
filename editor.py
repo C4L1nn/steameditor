@@ -59,6 +59,7 @@ from core import (
 )
 
 from config import (
+    PROFILE_KEYS,
     STEAM_CONSOLE_SNIPPETS,
     STEAM_DIRECT_UPLOAD_NOTE,
     STEAM_HELPER_LINKS,
@@ -74,8 +75,10 @@ from config import (
     get_template_console_snippet,
     load_config,
     load_custom_presets,
+    load_profiles,
     save_config,
     save_custom_presets,
+    save_profiles,
     steam_api_config_errors,
     upload_status_path,
 )
@@ -354,12 +357,13 @@ class DropZone(ctk.CTkFrame):
     """Dosya bırakma / önizleme alanı."""
     _PULSE_STEPS = 40
 
-    def __init__(self, master, on_file, initialdir_getter=None, **kw):
+    def __init__(self, master, on_file, on_batch=None, initialdir_getter=None, **kw):
         kw.setdefault("corner_radius", 14)
         kw.setdefault("border_width", 2)
         super().__init__(master, fg_color=C_BG2,
                          border_color=C_BORDER, **kw)
         self._on_file = on_file
+        self._on_batch = on_batch
         self._initialdir_getter = initialdir_getter
         self._pulse_id = None
         self._pulse_t = 0.0
@@ -406,6 +410,16 @@ class DropZone(ctk.CTkFrame):
             padx=10,
             pady=5)
 
+        # Toplu seçim rozeti (birden fazla dosya seçilince görselin üstünde durur)
+        self._batch_badge = ctk.CTkLabel(
+            self, text="",
+            font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
+            text_color=C_BG0,
+            fg_color=C_ACCENT,
+            corner_radius=10,
+            padx=10,
+            pady=4)
+
         self.bind("<Button-1>", self._pick, add="+")
 
         def _bind_click(w):
@@ -450,23 +464,34 @@ class DropZone(ctk.CTkFrame):
         d = self._initialdir_getter() if self._initialdir_getter else ""
         if d and os.path.isdir(d):
             kwargs["initialdir"] = d
-        p = filedialog.askopenfilename(**kwargs)
-        if p:
-            self._on_file(p)
+        paths = filedialog.askopenfilenames(**kwargs)
+        if not paths:
+            return
+        if len(paths) == 1:
+            self._on_file(paths[0])
+        elif self._on_batch:
+            self._on_batch(list(paths))
 
     def _on_drop(self, event):
         # event.data: boşluklu yollar {..} ile sarılı, çoklu dosya boşlukla ayrık
         try:
-            paths = self.tk.splitlist(event.data)
+            raw = self.tk.splitlist(event.data)
         except Exception:
-            paths = [event.data]
-        for path in paths:
+            raw = [event.data]
+        paths = []
+        for path in raw:
             path = path.strip().strip("{}")
             if os.path.isfile(path) or os.path.isdir(path):
-                self._on_file(path)
-                break
+                paths.append(path)
+        if not paths:
+            return
+        files_only = [p for p in paths if os.path.isfile(p)]
+        if len(files_only) > 1 and self._on_batch:
+            self._on_batch(files_only)
+        else:
+            self._on_file(paths[0])
 
-    def show_image(self, img: Image.Image, info: str = ""):
+    def show_image(self, img: Image.Image, info: str = "", batch_count: int = 0):
         self._stop_pulse()
         self._idle_frame.pack_forget()
 
@@ -484,11 +509,17 @@ class DropZone(ctk.CTkFrame):
             self._preview_info.pack(pady=(0, 10))
         else:
             self._preview_info.pack_forget()
+        if batch_count > 1:
+            self._batch_badge.configure(text=f"🗂  +{batch_count - 1} dosya daha (toplu)")
+            self._batch_badge.place(relx=1.0, rely=0.0, anchor="ne", x=-14, y=14)
+        else:
+            self._batch_badge.place_forget()
         self.configure(border_color=C_ACCENT)
 
     def reset(self):
         self._preview_label.pack_forget()
         self._preview_info.pack_forget()
+        self._batch_badge.place_forget()
         self._idle_frame.pack(expand=True)
         self.configure(border_color=C_BORDER)
         self._pulse_t = 0.0; self._pulse_dir = 1
@@ -870,6 +901,7 @@ class SettingsPage(ctk.CTkFrame):
         ("Genel", "⚙"),
         ("Border FX", "🎨"),
         ("Şablonlar", "🧩"),
+        ("Profiller", "🗂"),
         ("Steam API", "☁"),
         ("Notlar", "📋"),
     ]
@@ -942,6 +974,7 @@ class SettingsPage(ctk.CTkFrame):
             "Genel": self._build_general,
             "Border FX": self._build_border_fx,
             "Şablonlar": self._build_templates,
+            "Profiller": self._build_profiles,
             "Steam API": self._build_steam_api,
             "Notlar": self._build_notes,
         }[name]
@@ -1358,6 +1391,103 @@ class SettingsPage(ctk.CTkFrame):
                    height=32, text_color=C_ERROR,
                    command=delete_template).pack(fill="x", pady=3)
 
+    # ── Profiller ──────────────────────────────────────────
+    def _build_profiles(self, p):
+        cfg = self.app._cfg
+        ctk.CTkLabel(p, text="Profiller",
+                     font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
+                     text_color=C_TEXT).pack(anchor="w", padx=4, pady=(4, 6))
+        ctk.CTkLabel(p, text="Şablon + Border FX + upload ayarını tek profil olarak kaydet, "
+                             "sonra tek tıkla uygula.",
+                     font=ctk.CTkFont("Segoe UI", 10), text_color=C_DIM,
+                     wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 12))
+
+        # Yeni profil oluştur
+        new_card = ctk.CTkFrame(p, fg_color=C_BG3, corner_radius=10)
+        new_card.pack(fill="x", padx=2, pady=(0, 14))
+        ctk.CTkLabel(new_card, text="MEVCUT AYARLARDAN PROFİL OLUŞTUR",
+                     font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
+                     text_color=C_DIM).pack(anchor="w", padx=12, pady=(10, 6))
+        name_entry = ctk.CTkEntry(new_card, fg_color=C_BG4, border_color=C_BORDER,
+                                  text_color=C_TEXT, height=32,
+                                  placeholder_text="Profil adı (ör. Vitrin + Kırmızı Border)")
+        name_entry.pack(fill="x", padx=10, pady=(0, 8))
+
+        def create_profile():
+            name = name_entry.get().strip()
+            if not name:
+                self.app._status.error("Profil adı gir")
+                return
+            profiles = load_profiles()
+            profiles[name] = {"template_name": self.app.template.get("name")}
+            for key in PROFILE_KEYS:
+                profiles[name][key] = cfg.get(key)
+            save_profiles(profiles)
+            self.app._status.ok(f"Profil kaydedildi: {name}")
+            self.open_tab("Profiller")
+
+        AnimButton(new_card, text="＋  Profil Olarak Kaydet",
+                   variant="accent", height=32, text_color=C_BG0,
+                   command=create_profile).pack(fill="x", padx=10, pady=(0, 10))
+
+        # Mevcut profiller
+        ctk.CTkLabel(p, text="KAYITLI PROFİLLER",
+                     font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
+                     text_color=C_DIM).pack(anchor="w", padx=4, pady=(0, 6))
+
+        profiles = load_profiles()
+        if not profiles:
+            ctk.CTkLabel(p, text="Henüz profil yok.",
+                         font=ctk.CTkFont("Segoe UI", 10),
+                         text_color=C_DIM).pack(anchor="w", padx=4, pady=8)
+            return
+
+        def apply_profile(name, data):
+            tmpl = next((t for t in TEMPLATES if t["name"] == data.get("template_name")), None)
+            if tmpl:
+                self.app.template = tmpl
+                self.app._sync_cards()
+            for key in PROFILE_KEYS:
+                if key in data:
+                    cfg[key] = data[key]
+            save_config(cfg)
+            if self.app.current_path and os.path.isfile(self.app.current_path):
+                self.app._load_preview(self.app.current_path)
+            note = "" if tmpl else " (şablon artık yok, atlandı)"
+            self.app._status.ok(f"Profil uygulandı: {name}{note}")
+
+        def delete_profile(name):
+            if not messagebox.askyesno("Profili Sil", f"'{name}' profili silinsin mi?"):
+                return
+            current = load_profiles()
+            current.pop(name, None)
+            save_profiles(current)
+            self.app._status.ok("Profil silindi")
+            self.open_tab("Profiller")
+
+        for name, data in sorted(profiles.items()):
+            row = ctk.CTkFrame(p, fg_color=C_BG3, corner_radius=8)
+            row.pack(fill="x", padx=2, pady=4)
+            info_bits = [data.get("template_name") or "?"]
+            if data.get("border_fx_enabled"):
+                info_bits.append("Border FX açık")
+            if data.get("auto_upload"):
+                info_bits.append("Auto-upload")
+            ctk.CTkLabel(row, text=name,
+                         font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
+                         text_color=C_TEXT, anchor="w").pack(anchor="w", padx=12, pady=(8, 0))
+            ctk.CTkLabel(row, text="  ·  ".join(info_bits),
+                         font=ctk.CTkFont("Segoe UI", 9),
+                         text_color=C_DIM, anchor="w").pack(anchor="w", padx=12, pady=(0, 6))
+            btns = ctk.CTkFrame(row, fg_color="transparent")
+            btns.pack(fill="x", padx=10, pady=(0, 8))
+            AnimButton(btns, text="Uygula", variant="accent", height=28, text_color=C_BG0,
+                       command=lambda n=name, d=data: apply_profile(n, d)
+                       ).pack(side="left", fill="x", expand=True, padx=(0, 4))
+            AnimButton(btns, text="Sil", nc=C_BG4, hc=C_BG5, height=28, text_color=C_ERROR,
+                       command=lambda n=name: delete_profile(n)
+                       ).pack(side="left", fill="x", expand=True, padx=(4, 0))
+
     # ── Steam API ──────────────────────────────────────────
     def _build_steam_api(self, p):
         cfg = self.app._cfg
@@ -1551,7 +1681,7 @@ class SettingsPage(ctk.CTkFrame):
 # ── App ─────────────────────────────────────────────────────
 class App(ctk.CTk):
 
-    def __init__(self):
+    def __init__(self, preload_path=None):
         super().__init__()
         # Sürükle-bırak için tkdnd Tcl uzantısını köke yükle
         self._dnd_ok = False
@@ -1567,6 +1697,7 @@ class App(ctk.CTk):
         self.configure(fg_color=C_BG1)
 
         self.current_path = None
+        self._batch_files = None         # çoklu seçim: belirli dosya listesi (klasörden ayrı)
         self._last_outputs = []
         self._splitting = False          # async bölme sırasında tekrar tetiklemeyi engelle
         self._upload_proc = None         # çalışan Community uploader süreç tutamacı
@@ -1583,6 +1714,11 @@ class App(ctk.CTk):
                 break
 
         self._build()
+
+        if preload_path and os.path.isfile(preload_path):
+            # Pencere tam çizilmeden önizleme boyutlandırması yanlış çıkmasın diye
+            # mainloop başladıktan sonraya ertele.
+            self.after(200, lambda: self._on_file_drop(preload_path))
 
     # ──────────────────────────────────────────────────────
     def _build(self):
@@ -1777,7 +1913,7 @@ class App(ctk.CTk):
         main.grid_columnconfigure(0, weight=1)
 
         # Üst: drop zone / önizleme
-        self._drop = DropZone(main, self._on_file_drop,
+        self._drop = DropZone(main, self._on_file_drop, self._on_batch_drop,
                               initialdir_getter=lambda: self._cfg.get("last_input_dir", ""))
         self._drop.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
 
@@ -1900,6 +2036,7 @@ class App(ctk.CTk):
             save_config(self._cfg)
 
     def _on_file_drop(self, path):
+        self._batch_files = None
         # Sürüklenen/seçilen yol klasörse toplu giriş gibi davran
         if os.path.isdir(path):
             self.current_path = path
@@ -1912,13 +2049,27 @@ class App(ctk.CTk):
         self._load_preview(path)
         self._status.set(f"Yüklendi: {os.path.basename(path)}", C_TEXT, C_SUCCESS)
 
+    def _on_batch_drop(self, paths):
+        exts = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+        valid = [p for p in paths if p.lower().endswith(exts)]
+        if not valid:
+            self._status.error("Seçilen dosyalar desteklenen bir formatta değil")
+            return
+        self._batch_files = valid
+        self.current_path = valid[0]
+        self._remember_input_dir(os.path.dirname(valid[0]))
+        self._load_preview(valid[0])
+        self._status.set(f"{len(valid)} dosya seçildi (toplu bölme)", C_TEXT, C_SUCCESS)
+
     def _load_preview(self, path):
         try:
             img = Image.open(path)
             if hasattr(img, "n_frames") and img.n_frames > 1:
                 img.seek(0)
             preview = render_template_preview(img, self.template, self._cfg)
-            self._drop.show_image(preview, template_output_summary(img, self.template))
+            batch_count = len(self._batch_files) if self._batch_files else 0
+            self._drop.show_image(preview, template_output_summary(img, self.template),
+                                  batch_count=batch_count)
         except Exception as e:
             self._status.error(f"Önizleme hatası: {e}")
 
@@ -1927,9 +2078,13 @@ class App(ctk.CTk):
         kwargs = {"filetypes": [("Resimler", "*.png;*.jpg;*.jpeg;*.webp;*.gif")]}
         if initial and os.path.isdir(initial):
             kwargs["initialdir"] = initial
-        p = filedialog.askopenfilename(**kwargs)
-        if p:
-            self._on_file_drop(p)
+        paths = filedialog.askopenfilenames(**kwargs)
+        if not paths:
+            return
+        if len(paths) == 1:
+            self._on_file_drop(paths[0])
+        else:
+            self._on_batch_drop(list(paths))
 
     def _pick_folder(self):
         initial = self._cfg.get("last_input_dir", "")
@@ -1938,6 +2093,7 @@ class App(ctk.CTk):
             kwargs["initialdir"] = initial
         p = filedialog.askdirectory(**kwargs)
         if p:
+            self._batch_files = None
             self.current_path = p
             self._drop.reset()
             self._remember_input_dir(p)
@@ -1956,6 +2112,9 @@ class App(ctk.CTk):
     def _split_single(self):
         if self._splitting:
             self._status.error("Bir bölme işlemi zaten sürüyor")
+            return
+        if self._batch_files:
+            self._split_batch()
             return
         if not self.current_path or os.path.isdir(self.current_path):
             self._status.error("Önce tek bir resim seç")
@@ -2004,20 +2163,24 @@ class App(ctk.CTk):
         if self._splitting:
             self._status.error("Bir bölme işlemi zaten sürüyor")
             return
-        if not self.current_path or not os.path.isdir(self.current_path):
-            self._status.error("Önce bir klasör seç")
+
+        if self._batch_files:
+            file_paths = list(self._batch_files)
+        elif self.current_path and os.path.isdir(self.current_path):
+            exts = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+            file_paths = [os.path.join(self.current_path, f)
+                          for f in os.listdir(self.current_path)
+                          if f.lower().endswith(exts)]
+        else:
+            self._status.error("Önce bir klasör veya birden fazla dosya seç")
             return
 
-        exts = (".png", ".jpg", ".jpeg", ".webp", ".gif")
-        files = [f for f in os.listdir(self.current_path)
-                 if f.lower().endswith(exts)]
-        if not files:
-            self._status.error("Klasörde resim bulunamadı")
+        if not file_paths:
+            self._status.error("İşlenecek resim bulunamadı")
             return
 
-        total = len(files)
-        # İşlem boyunca şablon/klasör değişse bile tutarlı kalsın diye sabitle
-        folder = self.current_path
+        total = len(file_paths)
+        # İşlem boyunca şablon/ayar değişse bile tutarlı kalsın diye sabitle
         template = self.template
         cfg = self._cfg
         outdir = self.output_dir
@@ -2045,13 +2208,23 @@ class App(ctk.CTk):
         bar.pack(pady=8)
         bar.set(0)
 
-        created_all = []; errors = []
+        created_all = []; errors = []; renamed = []
 
         def worker():
-            for i, fname in enumerate(files, 1):
+            # Aynı isim gövdesine (stem) sahip FARKLI kaynak dosyalar aynı
+            # çıktı adını üretip birbirinin üstüne yazmasın diye say.
+            seen_stems = {}
+            for i, path in enumerate(file_paths, 1):
+                fname = os.path.basename(path)
                 try:
-                    r = process_image(os.path.join(folder, fname),
-                                      outdir, template, cfg)
+                    stem = os.path.splitext(fname)[0]
+                    key = stem.lower()
+                    count = seen_stems.get(key, 0)
+                    seen_stems[key] = count + 1
+                    override = stem if count == 0 else f"{stem}_{count + 1}"
+                    if override != stem:
+                        renamed.append(f"{fname} -> {override}")
+                    r = process_image(path, outdir, template, cfg, name_override=override)
                     created_all.extend(r)
                 except Exception as e:
                     errors.append(f"{fname}: {e}")
@@ -2072,9 +2245,9 @@ class App(ctk.CTk):
                 self._status.ok(
                     f"{len(created_all)} parça oluşturuldu ({total} dosya) ✓")
             self._show_split_preview(created_all)
-            # Raporu yalnızca hata varsa göster; başarıda önizleme + durum çubuğu yeterli
-            if errors:
-                self._show_batch_report(total, created_all, errors)
+            # Raporu hata VEYA çakışma-yeniden-adlandırma varsa göster
+            if errors or renamed:
+                self._show_batch_report(total, created_all, errors, renamed)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2150,6 +2323,9 @@ class App(ctk.CTk):
             self._status.error(f"Silinemedi: {e}")
 
     def _rerun_current(self):
+        if self._batch_files:
+            self._split_batch()
+            return
         if not self.current_path:
             self._status.error("Yeniden işlemek için önce dosya veya klasör seç")
             return
@@ -2182,7 +2358,8 @@ class App(ctk.CTk):
         else:
             self._status.ok(f"{removed} çıktı temizlendi")
 
-    def _show_batch_report(self, total: int, created: list, errors: list):
+    def _show_batch_report(self, total: int, created: list, errors: list, renamed: list | None = None):
+        renamed = renamed or []
         win = ctk.CTkToplevel(self)
         win.title("Toplu İşlem Raporu")
         win.geometry("520x360")
@@ -2205,12 +2382,24 @@ class App(ctk.CTk):
             f"Oluşan çıktı: {len(created)}\n"
             f"Toplam boyut: {size_mb:.2f} MB\n"
             f"Hata: {len(errors)}\n"
+            f"Çakışma önlendi: {len(renamed)}\n"
             f"Çıktı klasörü: {self.output_dir}"
         )
         ctk.CTkLabel(win, text=summary,
                      font=ctk.CTkFont("Consolas", 11),
                      text_color=C_DIM,
                      justify="left").pack(anchor="w", padx=16, pady=8)
+
+        if renamed:
+            ctk.CTkLabel(win, text="AYNI İSİMLİ FARKLI DOSYALAR YENİDEN ADLANDIRILDI",
+                         font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
+                         text_color=C_ACCENT).pack(anchor="w", padx=16, pady=(4, 2))
+            rbox = Text(win, bg=C_BG2, fg=C_TEXT, insertbackground=C_ACCENT,
+                       font=("Consolas", 9), wrap="word", relief="flat",
+                       padx=10, pady=8, height=min(5, len(renamed) + 1))
+            rbox.pack(fill="x", padx=16, pady=(0, 8))
+            rbox.insert("1.0", "\n".join(renamed))
+            rbox.configure(state="disabled")
 
         if errors:
             box = Text(win, bg=C_BG2, fg=C_ERROR, insertbackground=C_ACCENT,
@@ -2450,9 +2639,12 @@ class App(ctk.CTk):
         if not os.path.exists(gif_script):
             self._status.error("gif.py bulunamadı")
             return
+        args = [sys.executable, gif_script]
+        # Şu an yüklü dosya varsa GIF Maker'a önceden yüklenmiş şekilde aç
+        if self.current_path and os.path.isfile(self.current_path):
+            args.append(self.current_path)
         try:
-            subprocess.Popen([sys.executable, gif_script],
-                             creationflags=0)
+            subprocess.Popen(args, creationflags=0)
             self._status.set("GIF Maker açıldı", C_SUCCESS, C_SUCCESS)
         except Exception as e:
             self._status.error(f"Açılamadı: {e}")
@@ -2489,7 +2681,10 @@ def main():
         if os.path.exists(t):
             headless_run(t)
             return
-    app = App()
+    # Dev/normal çalıştırmada bir dosya argümanı verilirse (ör. GIF Maker'dan
+    # "Steam Splitter'da Aç"), GUI'yi o dosya yüklü şekilde aç.
+    preload = sys.argv[1] if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]) else None
+    app = App(preload_path=preload)
     app.mainloop()
 
 

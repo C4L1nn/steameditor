@@ -429,7 +429,7 @@ class StatusBar(ctk.CTkFrame):
 # ── GifMaker ──────────────────────────────────────────────
 class GifMaker(ctk.CTk):
 
-    def __init__(self):
+    def __init__(self, preload_path=None):
         super().__init__()
         self.title("GIF / WebP Maker PRO")
         self.geometry("980x640")
@@ -452,8 +452,12 @@ class GifMaker(ctk.CTk):
         self._user_presets = _load_effect_presets()
         self._show_before_var = BooleanVar(value=False)
         self._last_est_bytes = None
+        self._last_output_path = None
 
         self._build()
+
+        if preload_path and os.path.isfile(preload_path):
+            self.after(200, lambda: self._load_media(preload_path))
 
     # ── Layout ────────────────────────────────────────────
     def _build(self):
@@ -537,9 +541,20 @@ class GifMaker(ctk.CTk):
             command=self._convert)
         self._btn_convert.grid(row=3, column=0, sticky="ew", pady=(6, 0))
 
+        # Son çıktıyı doğrudan Steam Splitter'da aç (dönüştürme bitince aktifleşir)
+        self._btn_send_to_splitter = AnimButton(
+            left, text="✂  Steam Splitter'da Aç (son çıktı)",
+            nc=C_BG3, hc=C_BG4,
+            height=34,
+            font=ctk.CTkFont("Segoe UI", 11),
+            text_color=C_DIM,
+            command=self._send_to_splitter)
+        self._btn_send_to_splitter.grid(row=4, column=0, sticky="ew", pady=(6, 0))
+        self._btn_send_to_splitter.configure(state="disabled")
+
         # Status
         self._status = StatusBar(left)
-        self._status.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        self._status.grid(row=5, column=0, sticky="ew", pady=(8, 0))
 
         # Sağ: ayarlar
         right = ctk.CTkScrollableFrame(
@@ -1217,8 +1232,29 @@ class GifMaker(ctk.CTk):
             size_mb = os.path.getsize(out_path) / (1024*1024) if os.path.exists(out_path) else 0
             self._status.ok(f"Hazır! {os.path.basename(out_path)}  ({size_mb:.2f} MB)")
             self._open_folder(os.path.dirname(out_path))
+            self._last_output_path = out_path
+            self._btn_send_to_splitter.configure(state="normal", text_color=C_TEXT)
         else:
             self._status.error(msg)
+
+    def _send_to_splitter(self):
+        """Son dönüştürülen dosyayı doğrudan Steam Splitter'da (editor.py) açar."""
+        if not self._last_output_path or not os.path.exists(self._last_output_path):
+            self._status.error("Gönderilecek çıktı bulunamadı")
+            return
+        editor_script = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "editor.py")
+        if not os.path.exists(editor_script):
+            self._status.error("editor.py bulunamadı")
+            return
+        try:
+            subprocess.Popen([sys.executable, editor_script, self._last_output_path],
+                             cwd=os.path.dirname(editor_script),
+                             creationflags=0)
+            self._status.set(f"Steam Splitter açılıyor: {os.path.basename(self._last_output_path)}",
+                             C_SUCCESS, C_SUCCESS)
+        except Exception as e:
+            self._status.error(f"Açılamadı: {e}")
 
     def _get_duration(self):
         txt = self._dur_entry.get().strip().replace(",", ".")
@@ -2293,7 +2329,8 @@ def _convert_video(vpath, out_path, fmt,
 
 
 def main():
-    app = GifMaker()
+    preload = sys.argv[1] if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]) else None
+    app = GifMaker(preload_path=preload)
     app.mainloop()
 
 
