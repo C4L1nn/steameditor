@@ -337,15 +337,18 @@ def _save_animated_gif(frames_rgba, durations, outpath: str, patch: bool = False
         print(f"[PATCH SKIP] GIF dosyasında son byte patch uygulanmadı: {os.path.basename(outpath)}")
 
 
-def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = None):
+def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = None,
+                     name_override: str | None = None):
     """
     Animasyonlu GIF’i frame-by-frame split eder.
     uniform, multi ve single modların tamamında animasyonlu GIF üretir.
+    name_override verilirse çıktı adı kaynak dosya adı yerine bunu kullanır
+    (toplu işlemde aynı isimli farklı kaynakların üstüne yazmasını önlemek için).
     """
     os.makedirs(outdir, exist_ok=True)
     created_files = []
 
-    base = os.path.splitext(os.path.basename(path))[0]
+    base = name_override or os.path.splitext(os.path.basename(path))[0]
     prefix = template.get("prefix", "parca")
     mode = template["mode"]
 
@@ -420,19 +423,22 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
 #   MOTOR – OTOMATİK PRESET MODU
 # ==========================================================
 
-def process_image(path: str, outdir: str, template: dict, cfg: dict | None = None):
+def process_image(path: str, outdir: str, template: dict, cfg: dict | None = None,
+                  name_override: str | None = None):
     """
     Otomatik mod: presetlere göre crop + (gerekirse) patch.
     GÜNCELLEME: GIF ise animasyonlu split motoru devreye girer.
+    name_override verilirse çıktı adı kaynak dosya adı yerine bunu kullanır
+    (toplu işlemde aynı isimli farklı kaynakların üstüne yazmasını önlemek için).
     """
     # GIF ise özel animasyonlu splitter
     if path.lower().endswith(".gif"):
-        return split_gif_frames(path, outdir, template, cfg)
+        return split_gif_frames(path, outdir, template, cfg, name_override=name_override)
 
     os.makedirs(outdir, exist_ok=True)
     created = []
 
-    base = os.path.splitext(os.path.basename(path))[0]
+    base = name_override or os.path.splitext(os.path.basename(path))[0]
     prefix = template.get("prefix", "parca")
     mode = template["mode"]
 

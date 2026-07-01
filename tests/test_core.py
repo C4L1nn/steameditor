@@ -186,6 +186,36 @@ def test_process_image_uniform_remainder_pixels(tmp_path):
     assert sum(widths) == 754
 
 
+def test_process_image_name_override_used_for_output_filename(tmp_path):
+    src = tmp_path / "weird_source_name.png"
+    Image.new("RGB", (300, 200), (1, 2, 3)).save(src)
+    template = {"name": "t", "mode": "single", "width": 100, "height": 100, "prefix": "shot"}
+    created = core.process_image(str(src), str(tmp_path), template, None,
+                                 name_override="override_stem")
+    assert len(created) == 1
+    assert os.path.basename(created[0]) == "shot_override_stem.png"
+
+
+def test_process_image_name_override_prevents_collision_between_sources(tmp_path):
+    """İki farklı kaynak dosya aynı ada (stem) sahipse, name_override
+    olmadan ikincisi birincinin çıktısını sessizce ezerdi."""
+    src_a = tmp_path / "a" / "photo.png"
+    src_b = tmp_path / "b" / "photo.png"
+    src_a.parent.mkdir(); src_b.parent.mkdir()
+    Image.new("RGB", (100, 100), (255, 0, 0)).save(src_a)
+    Image.new("RGB", (100, 100), (0, 255, 0)).save(src_b)
+    template = {"name": "t", "mode": "single", "width": 50, "height": 50, "prefix": "shot"}
+
+    created_a = core.process_image(str(src_a), str(tmp_path), template, None)
+    created_b = core.process_image(str(src_b), str(tmp_path), template, None,
+                                   name_override="photo_2")
+
+    assert created_a[0] != created_b[0]
+    assert os.path.exists(created_a[0]) and os.path.exists(created_b[0])
+    assert Image.open(created_a[0]).convert("RGB").getpixel((0, 0)) == (255, 0, 0)
+    assert Image.open(created_b[0]).convert("RGB").getpixel((0, 0)) == (0, 255, 0)
+
+
 def test_process_image_uniform_patch_sets_last_byte(tmp_path):
     src = tmp_path / "src.png"
     Image.new("RGB", (750, 500), (0, 0, 0)).save(src)
@@ -244,6 +274,19 @@ def test_split_gif_frames_uniform_produces_animated_parts(tmp_path):
     for path in created:
         frame_count = sum(1 for _ in ImageSequence.Iterator(Image.open(path)))
         assert frame_count == 3
+
+
+def test_split_gif_frames_name_override_used_for_output_filename(tmp_path):
+    frames = _make_gif_frames(transparent=False)
+    src = tmp_path / "any_name.gif"
+    frames[0].convert("RGB").save(
+        src, save_all=True, append_images=[f.convert("RGB") for f in frames[1:]],
+        duration=[80, 80, 80], loop=0)
+    template = {"name": "t", "mode": "single", "width": 40, "height": 40, "prefix": "shot"}
+    created = core.split_gif_frames(str(src), str(tmp_path), template, None,
+                                    name_override="renamed_stem")
+    assert len(created) == 1
+    assert os.path.basename(created[0]) == "shot_renamed_stem.gif"
 
 
 # ── patch helpers ─────────────────────────────────────────
