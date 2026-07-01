@@ -35,6 +35,10 @@ except Exception:
     _DND_AVAILABLE = False
 
 
+from applog import get_logger
+
+_log = get_logger("editor")
+
 from core import (
     GIFSICLE_PATH,
     _BORDER_DIR,
@@ -2007,7 +2011,7 @@ class App(ctk.CTk):
                 tkinterdnd2.TkinterDnD._require(self)
                 self._dnd_ok = True
             except Exception as e:
-                print(f"[DND] tkdnd yüklenemedi, sürükle-bırak devre dışı: {e}")
+                _log.warning(f"[DND] tkdnd yüklenemedi, sürükle-bırak devre dışı: {e}")
         self.title("Steam Splitter PRO")
         self.geometry("1340x840")
         self.minsize(1040, 700)
@@ -3281,7 +3285,7 @@ def headless_run(target):
     else:
         outdir = os.path.join(target, "output")
         process_folder(target, outdir, default_tmpl)
-    print("[DONE] Çıktı:", outdir)
+    _log.info(f"[DONE] Çıktı: {outdir}")
     open_folder(outdir)
 
 

@@ -10,6 +10,10 @@ import shutil
 
 from PIL import Image, ImageSequence, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageEnhance
 
+from applog import get_logger
+
+_log = get_logger("core")
+
 
 # Windows'ta alt süreçlerin konsol penceresi yanıp sönmesini engelle
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
@@ -29,7 +33,7 @@ def open_folder(path: str):
         else:                                # Linux ve diğer
             subprocess.Popen(["xdg-open", path])
     except Exception as e:
-        print(f"[OPEN FOLDER ERR] {e}")
+        _log.error(f"[OPEN FOLDER ERR] {e}")
 
 
 # ==========================================================
@@ -45,9 +49,9 @@ def patch_png_last_byte(path: str, value: int = 0x21):
             data[-1] = value
             with open(path, "wb") as f:
                 f.write(data)
-        print(f"[PATCH] {os.path.basename(path)} -> last byte = 0x{value:02X}")
+        _log.info(f"[PATCH] {os.path.basename(path)} -> last byte = 0x{value:02X}")
     except Exception as e:
-        print(f"[PATCH ERR] {path} | {e}")
+        _log.error(f"[PATCH ERR] {path} | {e}")
 
 
 def patch_gif_trailing_byte(path: str, value: int = 0x21):
@@ -58,14 +62,14 @@ def patch_gif_trailing_byte(path: str, value: int = 0x21):
         if not data:
             return
         if data[-1] == value:
-            print(f"[GIF PATCH] {os.path.basename(path)} zaten 0x{value:02X} ile bitiyor")
+            _log.info(f"[GIF PATCH] {os.path.basename(path)} zaten 0x{value:02X} ile bitiyor")
             return
         data[-1] = value
         with open(path, "wb") as f:
             f.write(data)
-        print(f"[GIF PATCH] {os.path.basename(path)} -> last byte = 0x{value:02X}")
+        _log.info(f"[GIF PATCH] {os.path.basename(path)} -> last byte = 0x{value:02X}")
     except Exception as e:
-        print(f"[GIF PATCH ERR] {path} | {e}")
+        _log.error(f"[GIF PATCH ERR] {path} | {e}")
 
 
 def find_gifsicle() -> str | None:
@@ -106,7 +110,7 @@ def optimize_gif_file(path: str, lossy: int = 80, colors: int = 128) -> bool:
         after = os.path.getsize(tmp)
         if after > 0 and after < before:
             os.replace(tmp, path)
-            print(f"[GIF OPT] {os.path.basename(path)} {before/1024/1024:.1f}MB -> {after/1024/1024:.1f}MB")
+            _log.info(f"[GIF OPT] {os.path.basename(path)} {before/1024/1024:.1f}MB -> {after/1024/1024:.1f}MB")
             return True
         try:
             os.remove(tmp)
@@ -118,7 +122,7 @@ def optimize_gif_file(path: str, lossy: int = 80, colors: int = 128) -> bool:
                 os.remove(tmp)
         except Exception:
             pass
-        print(f"[GIF OPT ERR] {os.path.basename(path)} | {e}")
+        _log.error(f"[GIF OPT ERR] {os.path.basename(path)} | {e}")
     return False
 
 
@@ -210,7 +214,7 @@ def apply_border_fx(img: Image.Image, cfg: dict | None) -> Image.Image:
 
         return Image.alpha_composite(base, colored)
     except Exception as e:
-        print(f"[BORDER FX ERR] {path} | {e}")
+        _log.error(f"[BORDER FX ERR] {path} | {e}")
         return img
 
 
@@ -238,7 +242,7 @@ def apply_auto_enhance(img: Image.Image, cfg: dict | None) -> Image.Image:
         out.putalpha(base.getchannel("A"))
         return out
     except Exception as e:
-        print(f"[AUTO ENHANCE ERR] {e}")
+        _log.error(f"[AUTO ENHANCE ERR] {e}")
         return img
 
 
@@ -327,7 +331,7 @@ def apply_text_overlay(img: Image.Image, cfg: dict | None) -> Image.Image:
 
         return Image.alpha_composite(base, layer)
     except Exception as e:
-        print(f"[TEXT OVERLAY ERR] {e}")
+        _log.error(f"[TEXT OVERLAY ERR] {e}")
         return img
 
 
@@ -461,7 +465,7 @@ def _save_animated_gif(frames_rgba, durations, outpath: str, patch: bool = False
             duration=durations, loop=0, disposal=2,
         )
     if patch:
-        print(f"[PATCH SKIP] GIF dosyasında son byte patch uygulanmadı: {os.path.basename(outpath)}")
+        _log.info(f"[PATCH SKIP] GIF dosyasında son byte patch uygulanmadı: {os.path.basename(outpath)}")
 
 
 def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = None,
@@ -540,7 +544,7 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
         optimize_gif_file(outpath)
         created_files.append(outpath)
 
-    print(f"[GIF SPLIT] {os.path.basename(path)} -> {len(created_files)} animasyonlu parca ({mode})")
+    _log.info(f"[GIF SPLIT] {os.path.basename(path)} -> {len(created_files)} animasyonlu parca ({mode})")
     return created_files
 
 

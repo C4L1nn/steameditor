@@ -17,8 +17,18 @@ def ensure_playwright():
         return sync_playwright, PlaywrightTimeoutError
 
 
+try:
+    from applog import get_logger
+    _log = get_logger("uploader")
+except Exception:  # applog bulunamazsa (farklı cwd) konsola düş
+    _log = None
+
+
 def log(msg):
-    print(msg, flush=True)
+    if _log is not None:
+        _log.info(msg)
+    else:
+        print(msg, flush=True)
 
 
 def status_path_for(manifest_path):

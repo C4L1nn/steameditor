@@ -7,6 +7,10 @@ import json
 import urllib.parse
 import urllib.request
 
+from applog import get_logger
+
+_log = get_logger("config")
+
 
 # ==========================================================
 #   ŞABLONLAR (3 temel vitrin)
@@ -151,7 +155,7 @@ def load_custom_presets():
             TEMPLATES.append(tmpl)
             existing_names.add(name)
     except Exception as e:
-        print(f"[PRESETS LOAD ERR] {e}")
+        _log.error(f"[PRESETS LOAD ERR] {e}")
 
 
 def save_custom_presets():
@@ -175,7 +179,7 @@ def save_custom_presets():
         with open(_PRESETS_FILE, "w", encoding="utf-8") as f:
             json.dump(custom, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"[PRESETS SAVE ERR] {e}")
+        _log.error(f"[PRESETS SAVE ERR] {e}")
 
 
 def load_profiles() -> dict:
@@ -187,7 +191,7 @@ def load_profiles() -> dict:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except Exception as e:
-        print(f"[PROFILES LOAD ERR] {e}")
+        _log.error(f"[PROFILES LOAD ERR] {e}")
         return {}
 
 
@@ -196,7 +200,7 @@ def save_profiles(profiles: dict):
         with open(_PROFILES_FILE, "w", encoding="utf-8") as f:
             json.dump(profiles, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"[PROFILES SAVE ERR] {e}")
+        _log.error(f"[PROFILES SAVE ERR] {e}")
 
 
 def load_projects() -> dict:
@@ -209,7 +213,7 @@ def load_projects() -> dict:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except Exception as e:
-        print(f"[PROJECTS LOAD ERR] {e}")
+        _log.error(f"[PROJECTS LOAD ERR] {e}")
         return {}
 
 
@@ -218,7 +222,7 @@ def save_projects(projects: dict):
         with open(_PROJECTS_FILE, "w", encoding="utf-8") as f:
             json.dump(projects, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"[PROJECTS SAVE ERR] {e}")
+        _log.error(f"[PROJECTS SAVE ERR] {e}")
 
 
 def load_config() -> dict:
@@ -260,7 +264,7 @@ def load_config() -> dict:
             data = json.load(f)
         defaults.update(data)
     except Exception as e:
-        print(f"[CONFIG LOAD ERR] {e}")
+        _log.error(f"[CONFIG LOAD ERR] {e}")
     return defaults
 
 
@@ -269,7 +273,7 @@ def save_config(cfg: dict):
         with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(cfg, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        print(f"[CONFIG SAVE ERR] {e}")
+        _log.error(f"[CONFIG SAVE ERR] {e}")
 
 
 def _masked_key(key: str) -> str:

@@ -21,3 +21,6 @@ GIF/bin/
 # OS
 Thumbs.db
 .DS_Store
+
+# Log dosyaları
+steam_splitter.log*
