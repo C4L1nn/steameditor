@@ -297,15 +297,28 @@ class VideoPreview(ctk.CTkFrame):
         self._info_text = ""
 
         self._idle = ctk.CTkFrame(self, fg_color="transparent")
-        ctk.CTkLabel(self._idle, text="🎬",
-                     font=ctk.CTkFont("Segoe UI Emoji", 40),
-                     text_color=C_HINT).pack(pady=(28, 6))
-        ctk.CTkLabel(self._idle, text="Video sürükle veya tıkla",
-                     font=ctk.CTkFont("Segoe UI", 13, weight="bold"),
-                     text_color=C_DIM).pack()
-        ctk.CTkLabel(self._idle, text="MP4 · MOV · AVI · MKV",
+
+        badge = ctk.CTkFrame(self._idle, width=78, height=78,
+                             corner_radius=39, fg_color=C_BG3)
+        badge.pack(pady=(8, 14))
+        badge.pack_propagate(False)
+        ctk.CTkLabel(badge, text="🎬",
+                     font=ctk.CTkFont("Segoe UI Emoji", 32),
+                     text_color=C_ACC_LT).pack(expand=True)
+
+        ctk.CTkLabel(self._idle, text="Video / görsel sürükle",
+                     font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
+                     text_color=C_TEXT).pack()
+        ctk.CTkLabel(self._idle, text="veya tıklayıp dosya seç",
                      font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=C_HINT).pack(pady=(2, 28))
+                     text_color=C_DIM).pack(pady=(3, 14))
+
+        pill = ctk.CTkFrame(self._idle, fg_color=C_BG3, corner_radius=10)
+        pill.pack()
+        ctk.CTkLabel(pill, text="MP4  ·  MOV  ·  AVI  ·  MKV",
+                     font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
+                     text_color=C_DIM).pack(padx=12, pady=5)
+
         self._idle.pack(expand=True)
 
         self._thumb_lbl = ctk.CTkLabel(self, text="", fg_color="transparent")
@@ -316,9 +329,12 @@ class VideoPreview(ctk.CTkFrame):
             text_color=C_DIM)
         self.bind("<Configure>", lambda _: self._render_image(), add="+")
 
-        for w in [self, self._idle] + list(self._idle.winfo_children()):
+        def _bind_click(w):
             try: w.bind("<Button-1>", self._pick, add="+")
-            except: pass
+            except Exception: pass
+            for c in w.winfo_children():
+                _bind_click(c)
+        _bind_click(self)
 
         self._pulse()
 
@@ -755,11 +771,9 @@ class GifMaker(ctk.CTk):
         ctk.CTkLabel(preset_card, text="KENDİ PRESETLERİN",
                      font=ctk.CTkFont("Segoe UI", 8, weight="bold"),
                      text_color=C_DIM).pack(anchor="w", padx=10, pady=(8, 4))
-        preset_row = ctk.CTkFrame(preset_card, fg_color="transparent")
-        preset_row.pack(fill="x", padx=8, pady=(0, 8))
         self._user_preset_var = StringVar(value=self._first_user_preset_name())
         self._user_preset_menu = ctk.CTkOptionMenu(
-            preset_row,
+            preset_card,
             values=self._user_preset_names(),
             variable=self._user_preset_var,
             fg_color=C_BG4,
@@ -769,15 +783,18 @@ class GifMaker(ctk.CTk):
             dropdown_hover_color=C_BG4,
             text_color=C_TEXT,
             font=ctk.CTkFont("Segoe UI", 10, weight="bold"))
-        self._user_preset_menu.pack(side="left", fill="x", expand=True, padx=(0, 4))
-        AnimButton(preset_row, text="Yükle", height=30, width=68,
+        self._user_preset_menu.pack(fill="x", padx=8, pady=(0, 6))
+
+        preset_btn_row = ctk.CTkFrame(preset_card, fg_color="transparent")
+        preset_btn_row.pack(fill="x", padx=8, pady=(0, 8))
+        AnimButton(preset_btn_row, text="Yükle", height=30,
                    nc=C_BG4, hc=C_BG5,
-                   command=self._apply_user_preset).pack(side="left", padx=2)
-        AnimButton(preset_row, text="Kaydet", height=30, width=76,
+                   command=self._apply_user_preset).pack(side="left", fill="x", expand=True, padx=(0, 4))
+        AnimButton(preset_btn_row, text="Kaydet", height=30,
                    nc=C_ACCENT, hc=C_ACC_LT,
                    variant="accent",
                    text_color=C_BG0,
-                   command=self._save_user_preset).pack(side="left", padx=(2, 0))
+                   command=self._save_user_preset).pack(side="left", fill="x", expand=True, padx=(4, 0))
 
         self._sep(p)
 
