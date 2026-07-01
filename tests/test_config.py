@@ -12,6 +12,7 @@ def isolated_files(tmp_path, monkeypatch):
     config modülünün dosya yollarını tmp_path'e yönlendir."""
     monkeypatch.setattr(config, "_CONFIG_FILE", str(tmp_path / "cfg.json"))
     monkeypatch.setattr(config, "_PRESETS_FILE", str(tmp_path / "presets.json"))
+    monkeypatch.setattr(config, "_PROFILES_FILE", str(tmp_path / "profiles.json"))
     yield
 
 
@@ -151,3 +152,46 @@ def test_build_steam_upload_manifest_structure(tmp_path):
 def test_upload_status_path_derives_from_manifest_path():
     assert config.upload_status_path("/tmp/foo/steam_upload_manifest.json") == \
         "/tmp/foo/steam_upload_manifest.status.json"
+
+
+# ── profiller ───────────────────────────────────────────────
+
+def test_load_profiles_empty_when_file_missing():
+    assert config.load_profiles() == {}
+
+
+def test_save_then_load_profiles_roundtrip():
+    profiles = {
+        "Vitrin + Kırmızı Border": {
+            "template_name": "Workshop 5-Parça (Otomatik Boyut)",
+            "border_fx_enabled": True,
+            "border_fx_color": "#EF4444",
+            "auto_upload": False,
+        }
+    }
+    config.save_profiles(profiles)
+    reloaded = config.load_profiles()
+    assert reloaded == profiles
+
+
+def test_load_profiles_survives_corrupt_json():
+    with open(config._PROFILES_FILE, "w", encoding="utf-8") as f:
+        f.write("{not valid json")
+    assert config.load_profiles() == {}
+
+
+def test_load_profiles_ignores_non_dict_json():
+    with open(config._PROFILES_FILE, "w", encoding="utf-8") as f:
+        json.dump([1, 2, 3], f)
+    assert config.load_profiles() == {}
+
+
+def test_profile_keys_cover_border_fx_and_upload_settings():
+    # PROFILE_KEYS'in kapsamı: profil uygulanınca hangi cfg alanlarının
+    # değişeceğini belirler; bunlar yanlışlıkla daralırsa profil sistemi
+    # sessizce eksik ayar uygular.
+    assert set(config.PROFILE_KEYS) == {
+        "border_fx_enabled", "border_fx_template", "border_fx_color",
+        "border_fx_opacity", "border_fx_glow",
+        "auto_upload", "steam_community_auto_submit",
+    }

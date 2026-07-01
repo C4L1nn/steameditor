@@ -107,6 +107,15 @@ _PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_
 _CONFIG_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_config.json")
 
 
+_PROFILES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_profiles.json")
+
+PROFILE_KEYS = (
+    "border_fx_enabled", "border_fx_template", "border_fx_color",
+    "border_fx_opacity", "border_fx_glow",
+    "auto_upload", "steam_community_auto_submit",
+)
+
+
 def load_custom_presets():
     """
     steam_splitter_presets.json içindeki özel şablonları TEMPLATES listesine ekler.
@@ -161,6 +170,27 @@ def save_custom_presets():
             json.dump(custom, f, ensure_ascii=False, indent=2)
     except Exception as e:
         print(f"[PRESETS SAVE ERR] {e}")
+
+
+def load_profiles() -> dict:
+    """steam_splitter_profiles.json'u dict olarak döner (isim -> ayar seti)."""
+    if not os.path.exists(_PROFILES_FILE):
+        return {}
+    try:
+        with open(_PROFILES_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"[PROFILES LOAD ERR] {e}")
+        return {}
+
+
+def save_profiles(profiles: dict):
+    try:
+        with open(_PROFILES_FILE, "w", encoding="utf-8") as f:
+            json.dump(profiles, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[PROFILES SAVE ERR] {e}")
 
 
 def load_config() -> dict:
