@@ -1616,9 +1616,10 @@ class App(ctk.CTk):
                           corner_radius=0)
         sb.grid(row=0, column=0, sticky="nsew")
         sb.grid_propagate(False)
-        sb.grid_rowconfigure(3, weight=1)  # şablon kartları esner; araçlar+çıktı hep görünür
+        sb.grid_columnconfigure(0, weight=1)
+        sb.grid_rowconfigure(1, weight=1)  # kaydırılabilir gövde tüm boşluğu alır
 
-        # Logo
+        # Logo — sabit, kaymaz
         logo_f = ctk.CTkFrame(sb, fg_color="transparent")
         logo_f.grid(row=0, column=0, sticky="ew", padx=18, pady=(20, 4))
         ctk.CTkLabel(logo_f, text="⚡",
@@ -1633,41 +1634,45 @@ class App(ctk.CTk):
                      font=ctk.CTkFont("Segoe UI", 9),
                      text_color=C_DIM).pack(anchor="w")
 
-        # Separator
-        self._sep(sb, row=1)
-
-        # Şablon başlığı
-        self._section_label(sb, "ŞABLON", row=2)
-
-        # Şablon kartları (esnek alan: pencere kısaldıkça burası daralıp kayar)
-        self._cards_frame = ctk.CTkScrollableFrame(
+        # Kaydırılabilir gövde: şablon + araçlar + çıktı klasörü hepsi burada.
+        # Tek scroll alanı olduğu için şablon kartları artık kendi başına
+        # büyüyüp boşluk açmıyor; sadece içeriği kadar yer kaplar, gövdenin
+        # tamamı gerekirse kayar (pencere kısa olsa da hiçbir bölüm kesilmez).
+        body = ctk.CTkScrollableFrame(
             sb, fg_color="transparent",
             scrollbar_button_color=C_BG4,
-            scrollbar_button_hover_color=C_ACCENT,
-            height=180)
-        self._cards_frame.grid(row=3, column=0, sticky="nsew", padx=10, pady=(0, 4))
+            scrollbar_button_hover_color=C_ACCENT)
+        body.grid(row=1, column=0, sticky="nsew")
+        body.grid_columnconfigure(0, weight=1)
+
+        # Şablon başlığı
+        self._section_label(body, "ŞABLON", row=0)
+
+        # Şablon kartları — düz çerçeve, sadece kartlar kadar yer kaplar
+        self._cards_frame = ctk.CTkFrame(body, fg_color="transparent")
+        self._cards_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 4))
 
         self._cards = []
         self._rebuild_template_cards()
 
         # Şablon yönetimi (oluşturma da bu tek sayfanın içinde)
-        AnimButton(sb, text="🧩  Şablonlar",
+        AnimButton(body, text="🧩  Şablonlar",
                    nc=C_BG3, hc=C_BG4,
                    height=32, corner_radius=8,
                    font=ctk.CTkFont("Segoe UI", 11),
                    text_color=C_DIM,
                    command=lambda: self._open_settings_page("Şablonlar")
-                   ).grid(row=4, column=0, sticky="ew",
-                          padx=12, pady=(0, 8))
+                   ).grid(row=2, column=0, sticky="ew",
+                          padx=10, pady=(0, 8))
 
         # Separator
-        self._sep(sb, row=5)
+        self._sep(body, row=3)
 
         # Araçlar
-        self._section_label(sb, "ARAÇLAR", row=6)
+        self._section_label(body, "ARAÇLAR", row=4)
 
-        tools_f = ctk.CTkFrame(sb, fg_color="transparent")
-        tools_f.grid(row=7, column=0, sticky="ew", padx=10, pady=(0, 6))
+        tools_f = ctk.CTkFrame(body, fg_color="transparent")
+        tools_f.grid(row=5, column=0, sticky="ew", padx=8, pady=(0, 6))
 
         AnimButton(tools_f, text="🎮  Steam Çizim Sayfası",
                    nc=C_BG3, hc=C_BG4,
@@ -1736,13 +1741,13 @@ class App(ctk.CTk):
                    ).pack(fill="x", pady=2)
 
         # Separator
-        self._sep(sb, row=8)
+        self._sep(body, row=6)
 
         # Çıktı klasörü
-        self._section_label(sb, "ÇIKTI KLASÖRÜ", row=9)
+        self._section_label(body, "ÇIKTI KLASÖRÜ", row=7)
 
-        out_f = ctk.CTkFrame(sb, fg_color=C_BG3, corner_radius=8)
-        out_f.grid(row=10, column=0, sticky="ew", padx=10, pady=(0, 16))
+        out_f = ctk.CTkFrame(body, fg_color=C_BG3, corner_radius=8)
+        out_f.grid(row=8, column=0, sticky="ew", padx=8, pady=(0, 16))
         out_f.grid_columnconfigure(0, weight=1)
 
         self._out_lbl = ctk.CTkLabel(
