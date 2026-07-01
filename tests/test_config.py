@@ -13,6 +13,7 @@ def isolated_files(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "_CONFIG_FILE", str(tmp_path / "cfg.json"))
     monkeypatch.setattr(config, "_PRESETS_FILE", str(tmp_path / "presets.json"))
     monkeypatch.setattr(config, "_PROFILES_FILE", str(tmp_path / "profiles.json"))
+    monkeypatch.setattr(config, "_PROJECTS_FILE", str(tmp_path / "projects.json"))
     yield
 
 
@@ -193,5 +194,47 @@ def test_profile_keys_cover_border_fx_and_upload_settings():
     assert set(config.PROFILE_KEYS) == {
         "border_fx_enabled", "border_fx_template", "border_fx_color",
         "border_fx_opacity", "border_fx_glow",
+        "text_overlay_enabled", "text_overlay_text", "text_overlay_color",
+        "text_overlay_size", "text_overlay_position", "text_overlay_opacity",
+        "auto_enhance_enabled", "auto_enhance_intensity",
         "auto_upload", "steam_community_auto_submit",
     }
+
+
+# ── projeler ────────────────────────────────────────────────
+
+def test_load_projects_empty_when_file_missing():
+    assert config.load_projects() == {}
+
+
+def test_save_then_load_projects_roundtrip():
+    projects = {
+        "Kılıç Modu v2": {
+            "input_paths": [r"C:\workshop\kilic\cover.png", r"C:\workshop\kilic\shot2.png"],
+            "template_name": "Workshop 5-Parça (Otomatik Boyut)",
+            "output_dir": r"C:\workshop\kilic\output",
+            "note": "Ana vitrin seti",
+        },
+        "Zırh Seti": {
+            "input_dir": r"C:\workshop\zirh\screenshots",
+            "template_name": "Ekran Görüntüsü Tek Parça (650x850)",
+            "output_dir": r"C:\workshop\zirh\output",
+            "note": "",
+            "steam_community_upload_url": "https://steamcommunity.com/sharedfiles/edititem/767/9/",
+        },
+    }
+    config.save_projects(projects)
+    reloaded = config.load_projects()
+    assert reloaded == projects
+
+
+def test_load_projects_survives_corrupt_json():
+    with open(config._PROJECTS_FILE, "w", encoding="utf-8") as f:
+        f.write("{not valid json")
+    assert config.load_projects() == {}
+
+
+def test_load_projects_ignores_non_dict_json():
+    with open(config._PROJECTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(["not", "a", "dict"], f)
+    assert config.load_projects() == {}

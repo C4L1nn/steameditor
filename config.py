@@ -112,8 +112,14 @@ _PROFILES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam
 PROFILE_KEYS = (
     "border_fx_enabled", "border_fx_template", "border_fx_color",
     "border_fx_opacity", "border_fx_glow",
+    "text_overlay_enabled", "text_overlay_text", "text_overlay_color",
+    "text_overlay_size", "text_overlay_position", "text_overlay_opacity",
+    "auto_enhance_enabled", "auto_enhance_intensity",
     "auto_upload", "steam_community_auto_submit",
 )
+
+
+_PROJECTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_projects.json")
 
 
 def load_custom_presets():
@@ -193,6 +199,28 @@ def save_profiles(profiles: dict):
         print(f"[PROFILES SAVE ERR] {e}")
 
 
+def load_projects() -> dict:
+    """steam_splitter_projects.json'u dict olarak döner (proje adı -> aktif iş
+    durumu: giriş dosyaları/klasörü, şablon, çıktı klasörü, Workshop item bilgisi)."""
+    if not os.path.exists(_PROJECTS_FILE):
+        return {}
+    try:
+        with open(_PROJECTS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        print(f"[PROJECTS LOAD ERR] {e}")
+        return {}
+
+
+def save_projects(projects: dict):
+    try:
+        with open(_PROJECTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(projects, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"[PROJECTS SAVE ERR] {e}")
+
+
 def load_config() -> dict:
     """steam_splitter_config.json'u dict olarak döner."""
     defaults = {
@@ -215,6 +243,14 @@ def load_config() -> dict:
         "border_fx_color": "#8B5CF6",
         "border_fx_opacity": 100,
         "border_fx_glow": 35,
+        "text_overlay_enabled": False,
+        "text_overlay_text": "",
+        "text_overlay_color": "#FFFFFF",
+        "text_overlay_size": 6,
+        "text_overlay_position": "Alt Orta",
+        "text_overlay_opacity": 100,
+        "auto_enhance_enabled": False,
+        "auto_enhance_intensity": 50,
     }
     if not os.path.exists(_CONFIG_FILE):
         return defaults
