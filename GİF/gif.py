@@ -9,6 +9,7 @@ import time
 import random
 import json
 import math
+import uuid
 
 # customtkinter otomatik kurulum
 try:
@@ -694,7 +695,10 @@ class GifMaker(ctk.CTk):
             command=self._toggle_effect_gallery)
         self._effect_gallery_toggle.pack(fill="x", padx=8, pady=8)
         self._effect_gallery_body = ctk.CTkFrame(gallery, fg_color="transparent")
-        ctk.CTkLabel(gallery, text="EFEKT GALERİSİ",
+        # Not: bu etiket _effect_gallery_body'nin İÇİNE konur (gallery'nin
+        # doğrudan çocuğu değil) — aksi halde _sync_effect_gallery_visibility
+        # içindeki gizleme döngüsü bunu da gizler ve hiç görünmezdi.
+        ctk.CTkLabel(self._effect_gallery_body, text="EFEKT GALERİSİ",
                      font=ctk.CTkFont("Segoe UI", 8, weight="bold"),
                      text_color=C_DIM).pack(anchor="w", padx=10, pady=(8, 4))
         for group, names in EFFECT_GROUPS.items():
@@ -1606,8 +1610,10 @@ def _template_alpha_mask(template):
     alpha = template.getchannel("A")
     if alpha.getextrema() != (255, 255):
         return alpha
+    # Alfa kanalı yoksa (tamamen opak PNG): açık renkleri şeffaf say, koyu
+    # kenarlık çizgilerini görünür bırak.
     gray = template.convert("L")
-    return gray.point(lambda p: 255 - p if p > 245 or p < 245 else 0)
+    return gray.point(lambda p: 0 if p > 245 else 255)
 
 
 def _apply_border_template(img, template_name, color, glow_strength=0.45, opacity=1.0):
@@ -1636,6 +1642,36 @@ def _apply_border_template(img, template_name, color, glow_strength=0.45, opacit
     except Exception as e:
         print(f"border template error: {path} | {e}")
         return img
+
+
+def _apply_border_template_to_output(out_path, fmt, template_name, effect, glow,
+                                     colors=128, lossy=20, eff_dur=1.0, fps=12):
+    """Video kaynağından ffmpeg ile üretilen GIF/WebP çıktısına border template'i
+    PIL ile sonradan bindirir. ffmpeg filtre zinciri PNG border template overlay'i
+    uygulayamadığı için, video dönüştürmede Template ayarı bu adım olmadan
+    sessizce yok sayılırdı (görsel/GIF kaynaklar zaten PIL üzerinden geçiyor)."""
+    if not template_name or template_name == BORDER_TEMPLATE_NONE:
+        return
+    if not os.path.isfile(out_path):
+        return
+    try:
+        _, inner_color = _effect_border_colors(effect)
+        glow_strength = max(0, min(100, int(glow or 0))) / 100.0
+        with Image.open(out_path) as im:
+            frames = []
+            durations = []
+            for frame in ImageSequence.Iterator(im):
+                frames.append(frame.convert("RGB").copy())
+                durations.append(frame.info.get("duration", 40))
+        frames = [_apply_border_template(f, template_name, inner_color, glow_strength, 1.0)
+                  for f in frames]
+        if fmt == "WebP":
+            frames[0].save(out_path, "WEBP", save_all=True, append_images=frames[1:],
+                           duration=durations, loop=0, quality=80, method=6)
+        else:
+            _save_effect_frames_as_gif(frames, out_path, eff_dur, fps, lossy, colors)
+    except Exception as e:
+        print(f"border template postprocess error: {out_path} | {e}")
 
 
 def _apply_effect_to_image(img, sharpen, effect="none", border=0, glow=0,
@@ -2142,10 +2178,12 @@ def _estimate_size(vpath, fps, out_w, colors, lossy, eff_dur, sharpen, smooth,
                    cancel_event=None):
     chunk = min(0.6, eff_dur)
     td    = tempfile.gettempdir()
-    pid   = os.getpid()
-    pal   = os.path.join(td, f"_est_pal_{pid}.png")
-    raw   = os.path.join(td, f"_est_raw_{pid}.gif")
-    opt   = os.path.join(td, f"_est_opt_{pid}.gif")
+    # Her çağrıya özgü benzersiz ad: aynı süreçte iptal edilen bir tahmin ile
+    # hemen ardından başlayan yenisi aynı dosyaya çakışmasın (yarış durumu).
+    token = f"{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    pal   = os.path.join(td, f"_est_pal_{token}.png")
+    raw   = os.path.join(td, f"_est_raw_{token}.gif")
+    opt   = os.path.join(td, f"_est_opt_{token}.gif")
     base_vf = _video_filters(fps, out_w, sharpen, smooth, effect, border, glow,
                              intensity, bloom, vignette, particles)
     try:
@@ -2191,8 +2229,11 @@ def _convert_video(vpath, out_path, fmt,
                    intensity=75, bloom=55, vignette=45, particles=45,
                    border_template=BORDER_TEMPLATE_NONE):
     td    = tempfile.gettempdir()
-    pal   = os.path.join(td, "palette_full.png")
-    raw   = os.path.join(td, "raw_full.gif")
+    # Sabit ad yerine çağrıya özgü benzersiz ad: iki GIF Maker penceresi/süreci
+    # aynı anda dönüştürme yaparsa aynı geçici dosyaya çakışmasınlar.
+    token = f"{os.getpid()}_{uuid.uuid4().hex[:8]}"
+    pal   = os.path.join(td, f"palette_full_{token}.png")
+    raw   = os.path.join(td, f"raw_full_{token}.gif")
     base_vf = _video_filters(fps, out_w, sharpen, smooth, effect, border, glow,
                              intensity, bloom, vignette, particles)
 
@@ -2206,7 +2247,11 @@ def _convert_video(vpath, out_path, fmt,
                    + ["-i", vpath, "-vf", base_vf,
                       "-loop", "0", "-q:v", "80", out_path])
             ok = run(cmd)
-            return (True, "WebP hazır") if ok else (False, "WebP dönüştürme hatası")
+            if not ok:
+                return False, "WebP dönüştürme hatası"
+            _apply_border_template_to_output(out_path, "WebP", border_template, effect, glow,
+                                             colors, lossy, eff_dur, fps)
+            return True, "WebP hazır"
 
         # GIF: palettegen
         vf_pal = f"{base_vf},palettegen=max_colors={colors}:stats_mode=diff"
@@ -2224,13 +2269,19 @@ def _convert_video(vpath, out_path, fmt,
         # gifsicle optimize. Yoksa ffmpeg'in ürettiği GIF'i yine de çıktı yap.
         if GIFSICLE_MISSING:
             shutil.copyfile(raw, out_path)
+            _apply_border_template_to_output(out_path, "GIF", border_template, effect, glow,
+                                             colors, lossy, eff_dur, fps)
             return True, "GIF hazır (gifsicle yok, optimize edilmedi)"
 
         if not run([GIFSICLE, f"--lossy={lossy}",
                     f"--colors={colors}", "-O3", raw, "-o", out_path]):
             shutil.copyfile(raw, out_path)
+            _apply_border_template_to_output(out_path, "GIF", border_template, effect, glow,
+                                             colors, lossy, eff_dur, fps)
             return True, "GIF hazır (gifsicle optimize edemedi)"
 
+        _apply_border_template_to_output(out_path, "GIF", border_template, effect, glow,
+                                         colors, lossy, eff_dur, fps)
         return True, "GIF hazır"
     except Exception as e:
         return False, str(e)
