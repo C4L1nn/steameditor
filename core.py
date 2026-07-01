@@ -660,6 +660,13 @@ def split_multi_band(path: str, outdir: str, template: dict, band_count: int,
     Kaynağın boyu istenen bant sayısını karşılamıyorsa sığdığı kadar TAM
     bant üretilir (kısmi/gerilmiş bant üretilmez) — çağıran taraf
     len(created) // parts ile kaç bant üretildiğini anlayabilir.
+
+    Genişlik zaten target_w'dan büyük/eşitse SADECE ortadan yatay kırpılır
+    (yükseklik native/tam korunur — bantlama için piksel kaybı olmasın diye
+    ölçeklenmez). Genişlik target_w'dan küçükse upscale edilir (aynı oranda
+    yükseklik de büyür). İlk sürüm yanlışlıkla HER zaman genişliğe göre
+    ölçekliyordu; geniş kaynaklarda (örn. 1024px+) bu yüksekliği gereksiz
+    küçültüp tek bant için bile yetersiz hale getiriyordu.
     """
     if template["mode"] != "uniform":
         raise ValueError("Çoklu bant sadece 'uniform' modundaki şablonlarda desteklenir")
@@ -675,12 +682,16 @@ def split_multi_band(path: str, outdir: str, template: dict, band_count: int,
     slice_w = target_w // parts
 
     original = Image.open(path).convert("RGBA")
-    scale = target_w / original.width if original.width else 1.0
-    scaled_h = max(1, int(original.height * scale))
-    tall_canvas = _apply_effects_pipeline(
-        original.resize((target_w, scaled_h), Image.LANCZOS), cfg)
+    if original.width >= target_w:
+        left = (original.width - target_w) // 2
+        wide_canvas = original.crop((left, 0, left + target_w, original.height))
+    else:
+        scale = target_w / original.width if original.width else 1.0
+        scaled_h = max(1, int(original.height * scale))
+        wide_canvas = original.resize((target_w, scaled_h), Image.LANCZOS)
+    tall_canvas = _apply_effects_pipeline(wide_canvas, cfg)
 
-    available_bands = scaled_h // target_h
+    available_bands = tall_canvas.height // target_h
     bands_to_make = min(band_count, available_bands)
 
     created = []

@@ -417,6 +417,35 @@ def test_split_multi_band_zero_bands_requested_returns_empty(tmp_path):
     assert core.split_multi_band(src, str(tmp_path), template, 0, None) == []
 
 
+def test_split_multi_band_wide_source_keeps_native_height_not_shrunk(tmp_path):
+    """Regresyon: kaynağın genişliği target_w'dan büyükse (çok yaygın —
+    çoğu AI-art/ekran görüntüsü 750px'den geniştir) eskiden TÜM görsel
+    genişliğe göre ölçekleniyordu, bu da yüksekliği orantılı küçültüp
+    portre oranlı (ama 1250/750=1.667 kadar 'uzun' olmayan) gerçek
+    fotoğraflarda TEK bant için bile 'kaynağın boyu yetersiz' hatasına
+    yol açıyordu. Genişlik zaten yeterliyse SADECE yatay kırpılmalı,
+    yükseklik native kalmalı."""
+    src = tmp_path / "wide_portrait.png"
+    # 1000 genişlik (target_w=100'den 10x geniş), 250 yükseklik (tek bir
+    # 200'lük bandı KARŞILAR ama 1000->100 ölçeklenseydi 25'e düşüp
+    # hiçbir bandı karşılamazdı).
+    Image.new("RGB", (1000, 250), (10, 20, 30)).save(src)
+    template = {"name": "t", "mode": "uniform", "width": 100, "height": 200, "parts": 2,
+                "patch": False, "prefix": "t"}
+    created = core.split_multi_band(src, str(tmp_path), template, 1, None)
+    assert len(created) == 2, "genişlik zaten yeterliyken yükseklik gereksiz küçültülmemeli"
+
+
+def test_split_multi_band_narrow_source_upscales_to_target_width(tmp_path):
+    src = tmp_path / "narrow.png"
+    Image.new("RGB", (50, 500), (10, 20, 30)).save(src)  # target_w=100'den dar
+    template = {"name": "t", "mode": "uniform", "width": 100, "height": 200, "parts": 2,
+                "patch": False, "prefix": "t"}
+    created = core.split_multi_band(src, str(tmp_path), template, 2, None)
+    assert len(created) == 4  # 50->100 upscale, yükseklik de 500->1000, 2 tam bant sığar
+    assert Image.open(created[0]).size == (50, 200)
+
+
 def test_process_image_multi_creates_expected_sizes(tmp_path):
     src = tmp_path / "src.png"
     Image.new("RGB", (400, 300), (1, 2, 3)).save(src)
