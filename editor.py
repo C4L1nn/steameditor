@@ -309,7 +309,10 @@ class TemplateCard(ctk.CTkFrame):
             base = f"{t['parts']} parça · {pw}px × dinamik"
             return base + ("  ·  Patch ✓" if t.get("patch") else "")
         if m == "multi":
-            return "506px + 100px · 2 parça · 800px yüksek"
+            parts = t.get("parts", [])
+            widths = " + ".join(f"{p['width']}px" for p in parts)
+            max_h = max((p["height"] for p in parts), default=0)
+            return f"{widths} · {len(parts)} parça · {max_h}px yüksek"
         if m == "single":
             return f"{t.get('width',650)}×{t.get('height',850)}px · tek parça"
         return ""
