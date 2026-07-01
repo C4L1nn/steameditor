@@ -1690,6 +1690,10 @@ class SettingsPage(ctk.CTkFrame):
             pfid = app._cfg.get("steam_published_file_id", "").strip()
             if pfid:
                 entry["steam_published_file_id"] = pfid
+            # O anki efekt/upload ayarlarını da projeye dondur — kuyruk ya da
+            # "Aç" ile geri dönünce proje, kaydedildiği andaki efektlerle
+            # (border/metin/iyileştir) bölünür, o ANKİ global ayarlarla değil.
+            entry["effects"] = {k: app._cfg.get(k) for k in PROFILE_KEYS}
             projects = load_projects()
             projects[name] = entry
             save_projects(projects)
@@ -1739,6 +1743,13 @@ class SettingsPage(ctk.CTkFrame):
                 cfg_changed = True
             if data.get("steam_community_upload_url"):
                 app._cfg["steam_community_upload_url"] = data["steam_community_upload_url"]
+                cfg_changed = True
+            # Projeyle birlikte dondurulmuş efekt ayarlarını da geri yükle
+            effects = data.get("effects")
+            if isinstance(effects, dict):
+                for k in PROFILE_KEYS:
+                    if k in effects and effects[k] is not None:
+                        app._cfg[k] = effects[k]
                 cfg_changed = True
             if cfg_changed:
                 save_config(app._cfg)
@@ -3022,7 +3033,13 @@ class App(ctk.CTk):
         tmpl = next((t for t in TEMPLATES if t["name"] == data.get("template_name")), None) \
             or self.template
         outdir = data.get("output_dir") or self.output_dir
+        # Proje kaydedilirken dondurulmuş efekt ayarları varsa onları kullan
+        # (yoksa eski davranış: o anki global ayarlar)
         cfg = self._cfg
+        effects = data.get("effects")
+        if isinstance(effects, dict):
+            cfg = {**self._cfg,
+                   **{k: v for k, v in effects.items() if k in PROFILE_KEYS and v is not None}}
 
         def worker():
             created, errors = [], []

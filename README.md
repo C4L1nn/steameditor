@@ -7,8 +7,20 @@ masaüstü aracı. customtkinter ile yazılmış koyu temalı bir GUI.
 
 - Bir görseli (PNG/JPG/WEBP/**GIF**) seçilen şablona göre dikey parçalara böler
   (Workshop 5-parça, çizim vitrini 2-parça, ekran görüntüsü tek parça, veya özel şablonlar).
+- **Çoklu bant**: tek yüksek çözünürlüklü fotoğraftan üstten alta N adet 5'li set üretir
+  ("Konumu Seç, Gerisini Otomatik Böl" + "Bant sayısı") — vitrine sırayla yüklenince
+  kesintisiz tek görsel gibi görünür. Başlangıç konumunu crop penceresinde sen seçersin
+  (ya da "Ortala" ile tek tık).
 - Animasyonlu GIF'leri kare kare bölerek yine animasyonlu parçalar üretir (gifsicle ile optimize).
-- İsteğe bağlı **Border FX** (kenarlık şablonu + renk + glow) uygular.
+- **Efektler** (tek sekmede, bölme sırasında otomatik uygulanır): Border FX (kenarlık şablonu +
+  renk + glow), Metin Katmanı (başlık/imza, 7 konum, renk/boyut/opaklık), Otomatik İyileştir
+  (kontrast/doygunluk/keskinlik). Efektler parçalara değil TÜM görsele tek seferde uygulanır —
+  parçalar yan yana dizilince renk/metin bütünlüğü bozulmaz.
+- **Profiller**: şablon + efekt + upload ayarlarını isimli profil olarak kaydet, tek tıkla uygula.
+- **Projeler**: üzerinde çalıştığın işin tam durumunu (dosyalar + şablon + çıktı klasörü +
+  efektler + upload URL) kaydet; "Aç" ile aynen geri dön.
+- **Toplu upload kuyruğu**: birden fazla projeyi işaretle, sırayla bölünüp Steam Community'ye
+  yüklensin (proje başına 35 dk emniyet zaman sınırı, İptal ile güvenli durdurma).
 - Parçaları Playwright ile bir tarayıcı oturumu üzerinden Steam Community'ye yüklemeyi otomatikleştirir.
 - Ayrı bir **GIF / WebP Maker** (`GİF/gif.py`) ile video → GIF/WebP dönüştürür (ffmpeg).
 
@@ -23,8 +35,11 @@ masaüstü aracı. customtkinter ile yazılmış koyu temalı bir GUI.
 | `GİF/gif.py` | Bağımsız GIF/WebP yapım aracı (editörden "GIF Maker" ile açılır). |
 | `Border Templates/` | Border FX için kullanılan PNG kenarlık şablonları. |
 | `GİF/bin/` | Bundle edilen `ffmpeg`, `ffprobe`, `gifsicle` binary'leri (repoya dahil değil). |
+| `applog.py` | Ortak log altyapısı — her şey `steam_splitter.log`a da yazılır. |
 | `steam_splitter_config.json` | Uygulama ayarları (otomatik kaydedilir). |
 | `steam_splitter_presets.json` | Özel şablonlar. |
+| `steam_splitter_profiles.json` | Kayıtlı profiller (şablon+efekt+upload kombinasyonları). |
+| `steam_splitter_projects.json` | Kayıtlı projeler (aktif iş durumları). |
 | `steam_notes.txt` | Steam console kodları / linkler (uygulama içinden düzenlenebilir). |
 | `tests/` | `core.py`/`config.py`/`GİF/gif.py` için pytest testleri. |
 
@@ -62,6 +77,10 @@ Klasör seçip **Toplu Böl** ile tüm klasörü işleyebilirsin. Çıktılar `o
   o parça atlanır; monitör penceresinden **İptal Et** ile süreci durdurabilirsin.
 - `auto_submit` açıkken uploader "Kaydet ve Devam Et"e otomatik basar — gözetimsiz toplu yükleme
   için uygundur; tek tek kontrol etmek istiyorsan ayarlardan kapat.
+- Uploader yalnızca **sözleşme/onay** niteliğindeki checkbox'ları işaretler (agree/terms/kabul...);
+  Steam formuna eklenen tanımadığı kutulara dokunmaz, atladıklarını loglar.
+- Bir sorun olduğunda önce `steam_splitter.log` dosyasına bak — tüm hata/işlem kayıtları orada
+  (uygulama konsolsuz başlatılmış olsa bile).
 
 ## Test
 
