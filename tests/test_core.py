@@ -86,6 +86,104 @@ def test_apply_border_fx_changes_pixels_when_enabled():
     assert list(out.getdata()) != list(img.convert("RGBA").getdata())
 
 
+# ── apply_auto_enhance ─────────────────────────────────────
+
+def test_apply_auto_enhance_noop_when_disabled():
+    img = Image.new("RGB", (100, 100), (80, 90, 100))
+    out = core.apply_auto_enhance(img, {"auto_enhance_enabled": False})
+    assert list(out.convert("RGB").getdata()) == list(img.getdata())
+
+
+def test_apply_auto_enhance_noop_when_intensity_zero():
+    img = Image.new("RGB", (100, 100), (80, 90, 100))
+    out = core.apply_auto_enhance(img, {"auto_enhance_enabled": True, "auto_enhance_intensity": 0})
+    assert list(out.convert("RGB").getdata()) == list(img.getdata())
+
+
+def test_apply_auto_enhance_changes_pixels_when_enabled():
+    img = Image.new("RGB", (100, 100), (80, 90, 100))
+    out = core.apply_auto_enhance(img, {"auto_enhance_enabled": True, "auto_enhance_intensity": 80})
+    assert list(out.convert("RGB").getdata()) != list(img.getdata())
+
+
+def test_apply_auto_enhance_preserves_alpha_channel():
+    img = Image.new("RGBA", (50, 50), (80, 90, 100, 128))
+    out = core.apply_auto_enhance(img, {"auto_enhance_enabled": True, "auto_enhance_intensity": 90})
+    assert out.getchannel("A").getextrema() == (128, 128)
+
+
+# ── apply_text_overlay ─────────────────────────────────────
+
+def test_apply_text_overlay_noop_when_disabled():
+    img = Image.new("RGB", (300, 200), (10, 10, 10))
+    out = core.apply_text_overlay(img, {"text_overlay_enabled": False, "text_overlay_text": "HI"})
+    assert list(out.convert("RGB").getdata()) == list(img.getdata())
+
+
+def test_apply_text_overlay_noop_when_text_empty():
+    img = Image.new("RGB", (300, 200), (10, 10, 10))
+    out = core.apply_text_overlay(img, {"text_overlay_enabled": True, "text_overlay_text": "   "})
+    assert list(out.convert("RGB").getdata()) == list(img.getdata())
+
+
+def test_apply_text_overlay_zero_opacity_is_invisible():
+    """Regresyon: 'cfg.get(key, default) or default' deseni gerçek 0 değerini
+    de varsayılana çevirirdi (opacity=0 -> 100 gibi). 0 gerçekten görünmez olmalı."""
+    img = Image.new("RGB", (300, 200), (10, 10, 10))
+    out = core.apply_text_overlay(img, {
+        "text_overlay_enabled": True, "text_overlay_text": "GHOST",
+        "text_overlay_color": "#FFFFFF", "text_overlay_size": 10,
+        "text_overlay_position": "Orta", "text_overlay_opacity": 0,
+    })
+    assert list(out.convert("RGB").getdata()) == list(img.getdata())
+
+
+def test_apply_text_overlay_draws_text_at_requested_position():
+    img = Image.new("RGB", (400, 300), (10, 10, 10))
+    out = core.apply_text_overlay(img, {
+        "text_overlay_enabled": True, "text_overlay_text": "STEAM MOD",
+        "text_overlay_color": "#FFFFFF", "text_overlay_size": 10,
+        "text_overlay_position": "Alt Orta", "text_overlay_opacity": 100,
+    })
+    assert out.size == img.size
+    bottom = out.crop((0, 250, 400, 300)).convert("RGB")
+    assert any(p[0] > 150 for p in bottom.getdata()), "metin alt bölgede görünmüyor"
+    top = out.crop((0, 0, 400, 50)).convert("RGB")
+    assert all(p == (10, 10, 10) for p in top.getdata()), "metin yanlış konumda (üstte) görünüyor"
+
+
+# ── _apply_effects_pipeline / uniform parça bütünlüğü ─────
+
+def test_effects_pipeline_text_reads_coherently_across_uniform_parts(tmp_path):
+    """Workshop 5-parça modunda metin/border tüm canvas'a TEK seferde
+    uygulanmalı; aksi halde her parça kendi histogramına göre farklı
+    işlenir ve Steam'de yan yana dizilince renk/metin uyumsuz görünür."""
+    src = tmp_path / "src.png"
+    Image.new("RGB", (1508, 1000), (40, 60, 90)).save(src)
+    cfg = {
+        "text_overlay_enabled": True, "text_overlay_text": "COHERENT TEXT",
+        "text_overlay_color": "#FACC15", "text_overlay_size": 8,
+        "text_overlay_position": "Alt Orta", "text_overlay_opacity": 100,
+    }
+    template = {"name": "t", "mode": "uniform", "width": 750, "parts": 5,
+                "patch": False, "prefix": "t"}
+    created = sorted(core.process_image(str(src), str(tmp_path), template, cfg))
+    assert len(created) == 5
+
+    parts = [Image.open(p).convert("RGB") for p in created]
+    stitched = Image.new("RGB", (sum(p.width for p in parts), parts[0].height))
+    x = 0
+    for p in parts:
+        stitched.paste(p, (x, 0))
+        x += p.width
+
+    bottom = stitched.crop((0, stitched.height - 60, stitched.width, stitched.height))
+    bright_pixels = sum(1 for p in bottom.getdata() if p[0] > 150 and p[1] > 150)
+    # Metin birleştirilmiş görüntüde makul sayıda parlak piksel üretmeli
+    # (tek bir parçaya sıkışıp kaybolmamış, gerçekten okunur genişlikte).
+    assert bright_pixels > 200, f"birlestirilmis metin beklenenden az goruluyor ({bright_pixels} piksel)"
+
+
 # ── _template_preview_canvas ──────────────────────────────
 
 def test_uniform_boxes_cover_full_width_when_divisible():

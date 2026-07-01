@@ -8,7 +8,7 @@ import subprocess
 import platform
 import shutil
 
-from PIL import Image, ImageSequence, ImageDraw, ImageFilter
+from PIL import Image, ImageSequence, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageEnhance
 
 
 # Windows'ta alt süreçlerin konsol penceresi yanıp sönmesini engelle
@@ -214,6 +214,133 @@ def apply_border_fx(img: Image.Image, cfg: dict | None) -> Image.Image:
         return img
 
 
+def apply_auto_enhance(img: Image.Image, cfg: dict | None) -> Image.Image:
+    """Otomatik kontrast/doygunluk/parlaklık/keskinlik iyileştirmesi.
+    Kırpma/border/metin katmanlarından ÖNCE, tüm canvas'a tek seferde uygulanır
+    (parçalar ayrı ayrı iyileştirilirse her biri farklı histogram alıp
+    Workshop parçaları arasında renk uyumsuzluğuna yol açardı)."""
+    if not cfg or not bool(cfg.get("auto_enhance_enabled", False)):
+        return img
+    raw_intensity = cfg.get("auto_enhance_intensity", 50)
+    if raw_intensity is None:  # "or 50" kullanılırsa gerçek 0 değeri de 50'ye döner
+        raw_intensity = 50
+    intensity = max(0, min(100, int(raw_intensity))) / 100.0
+    if intensity <= 0:
+        return img
+    try:
+        base = img.convert("RGBA")
+        rgb = ImageOps.autocontrast(base.convert("RGB"), cutoff=1)
+        rgb = ImageEnhance.Color(rgb).enhance(1.0 + 0.25 * intensity)
+        rgb = ImageEnhance.Contrast(rgb).enhance(1.0 + 0.12 * intensity)
+        rgb = ImageEnhance.Brightness(rgb).enhance(1.0 + 0.05 * intensity)
+        rgb = ImageEnhance.Sharpness(rgb).enhance(1.0 + 0.15 * intensity)
+        out = rgb.convert("RGBA")
+        out.putalpha(base.getchannel("A"))
+        return out
+    except Exception as e:
+        print(f"[AUTO ENHANCE ERR] {e}")
+        return img
+
+
+_OVERLAY_FONT_CACHE: dict[int, "ImageFont.FreeTypeFont"] = {}
+_OVERLAY_FONT_CANDIDATES = (
+    r"C:\Windows\Fonts\seguisb.ttf",
+    r"C:\Windows\Fonts\segoeuib.ttf",
+    r"C:\Windows\Fonts\arialbd.ttf",
+    r"C:\Windows\Fonts\arial.ttf",
+)
+
+
+def _load_overlay_font(size: int):
+    size = max(8, int(size))
+    cached = _OVERLAY_FONT_CACHE.get(size)
+    if cached:
+        return cached
+    font = None
+    for path in _OVERLAY_FONT_CANDIDATES:
+        if os.path.isfile(path):
+            try:
+                font = ImageFont.truetype(path, size)
+                break
+            except Exception:
+                continue
+    if font is None:
+        font = ImageFont.load_default()
+    _OVERLAY_FONT_CACHE[size] = font
+    return font
+
+
+_TEXT_OVERLAY_POSITIONS = (
+    "Üst Sol", "Üst Orta", "Üst Sağ",
+    "Alt Sol", "Alt Orta", "Alt Sağ",
+    "Orta",
+)
+
+
+def apply_text_overlay(img: Image.Image, cfg: dict | None) -> Image.Image:
+    """Görselin üstüne başlık/imza metni bindirir (border FX'ten sonra, en üstte).
+    Uniform şablonlarda tüm canvas'a tek seferde uygulanır; Workshop parçaları
+    yan yana dizilince metin de Border FX gibi bütün olarak birleşir."""
+    if not cfg or not bool(cfg.get("text_overlay_enabled", False)):
+        return img
+    text = (cfg.get("text_overlay_text") or "").strip()
+    if not text:
+        return img
+    try:
+        base = img.convert("RGBA")
+        layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(layer)
+
+        size_pct = max(1, min(30, int(cfg.get("text_overlay_size", 6) or 6)))
+        font_size = max(10, int(base.height * size_pct / 100))
+        font = _load_overlay_font(font_size)
+
+        color = _parse_hex_color(cfg.get("text_overlay_color", "#FFFFFF"), (255, 255, 255))
+        raw_opacity = cfg.get("text_overlay_opacity", 100)
+        if raw_opacity is None:  # "or 100" kullanılırsa gerçek 0 değeri de 100'e döner
+            raw_opacity = 100
+        opacity = max(0, min(100, int(raw_opacity))) / 100.0
+        alpha = int(255 * opacity)
+
+        bbox = draw.textbbox((0, 0), text, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        margin = max(8, int(base.width * 0.03))
+
+        positions = {
+            "Üst Sol": (margin, margin),
+            "Üst Orta": ((base.width - tw) // 2, margin),
+            "Üst Sağ": (base.width - tw - margin, margin),
+            "Alt Sol": (margin, base.height - th - margin),
+            "Alt Orta": ((base.width - tw) // 2, base.height - th - margin),
+            "Alt Sağ": (base.width - tw - margin, base.height - th - margin),
+            "Orta": ((base.width - tw) // 2, (base.height - th) // 2),
+        }
+        x, y = positions.get(cfg.get("text_overlay_position", "Alt Orta"), positions["Alt Orta"])
+        x -= bbox[0]
+        y -= bbox[1]
+
+        # Okunabilirlik için ince koyu kontur
+        shadow_alpha = int(alpha * 0.75)
+        for ox, oy in ((-2, 0), (2, 0), (0, -2), (0, 2), (-2, -2), (2, -2), (-2, 2), (2, 2)):
+            draw.text((x + ox, y + oy), text, font=font, fill=(0, 0, 0, shadow_alpha))
+        draw.text((x, y), text, font=font, fill=color + (alpha,))
+
+        return Image.alpha_composite(base, layer)
+    except Exception as e:
+        print(f"[TEXT OVERLAY ERR] {e}")
+        return img
+
+
+def _apply_effects_pipeline(img: Image.Image, cfg: dict | None) -> Image.Image:
+    """Tüm canvas'a tek seferde: otomatik iyileştir -> border FX -> metin katmanı.
+    Sıra önemli: iyileştirme kırpmadan önce (parçalar arası renk tutarlılığı),
+    metin en üstte (border glow'un altında kalmasın)."""
+    img = apply_auto_enhance(img, cfg)
+    img = apply_border_fx(img, cfg)
+    img = apply_text_overlay(img, cfg)
+    return img
+
+
 def _template_preview_canvas(img: Image.Image, template: dict) -> tuple[Image.Image, list[tuple[int, int, int, int]]]:
     """Şablonun kullanacağı canvas'ı ve parça kutularını üretir."""
     img = img.convert("RGBA")
@@ -254,7 +381,7 @@ def _template_preview_canvas(img: Image.Image, template: dict) -> tuple[Image.Im
 def render_template_preview(img: Image.Image, template: dict, border_cfg: dict | None = None) -> Image.Image:
     """Bölmeden önce kesim çizgilerini görselin üstüne çizer."""
     canvas, boxes = _template_preview_canvas(img, template)
-    canvas = apply_border_fx(canvas, border_cfg)
+    canvas = _apply_effects_pipeline(canvas, border_cfg)
     overlay = canvas.copy()
     shade = Image.new("RGBA", overlay.size, (0, 0, 0, 0))
     shade_draw = ImageDraw.Draw(shade)
@@ -369,7 +496,7 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
         aspect_ratio = orig_h / orig_w if orig_w else 1.0
         dynamic_h = int(target_w * aspect_ratio)
 
-        scaled = [apply_border_fx(f.resize((target_w, dynamic_h), Image.LANCZOS), cfg) for f in frames]
+        scaled = [_apply_effects_pipeline(f.resize((target_w, dynamic_h), Image.LANCZOS), cfg) for f in frames]
 
         for i in range(parts):
             x1 = i * slice_w
@@ -391,7 +518,7 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
         max_h   = max(p["height"] for p in parts_def)
 
         # Tüm frameleri cover-resize ile ortak canvas’a oturt
-        scaled = [apply_border_fx(resize_cover(f, total_w, max_h), cfg) for f in frames]
+        scaled = [_apply_effects_pipeline(resize_cover(f, total_w, max_h), cfg) for f in frames]
 
         cur_x = 0
         for idx, part in enumerate(parts_def, start=1):
@@ -409,7 +536,7 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
     elif mode == "single":
         tw = template["width"]
         th = template["height"]
-        scaled = [apply_border_fx(resize_cover(f, tw, th), cfg) for f in frames]
+        scaled = [_apply_effects_pipeline(resize_cover(f, tw, th), cfg) for f in frames]
         outpath = os.path.join(outdir, f"{prefix}_{base}.gif")
         _save_animated_gif(scaled, durations, outpath, False)
         optimize_gif_file(outpath)
@@ -456,7 +583,7 @@ def process_image(path: str, outdir: str, template: dict, cfg: dict | None = Non
         aspect_ratio = orig_h / orig_w if orig_w else 1.0
         dynamic_h = int(target_w * aspect_ratio)
 
-        img = apply_border_fx(original.resize((target_w, dynamic_h), Image.LANCZOS), cfg)
+        img = _apply_effects_pipeline(original.resize((target_w, dynamic_h), Image.LANCZOS), cfg)
 
         slice_w = target_w // parts
 
@@ -480,7 +607,7 @@ def process_image(path: str, outdir: str, template: dict, cfg: dict | None = Non
         total_w = sum(p["width"] for p in template["parts"])
         max_h = max(p["height"] for p in template["parts"])
 
-        base_img = apply_border_fx(resize_cover(original, total_w, max_h), cfg)
+        base_img = _apply_effects_pipeline(resize_cover(original, total_w, max_h), cfg)
 
         cur_x = 0
         index = 1
@@ -504,7 +631,7 @@ def process_image(path: str, outdir: str, template: dict, cfg: dict | None = Non
     elif mode == "single":
         w = template["width"]
         h = template["height"]
-        piece = apply_border_fx(resize_cover(original, w, h), cfg)
+        piece = _apply_effects_pipeline(resize_cover(original, w, h), cfg)
         fname = f"{prefix}_{base}.png"
         full = os.path.join(outdir, fname)
         piece.save(full)
