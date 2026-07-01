@@ -100,24 +100,49 @@ def fill_title(page, title):
     return None
 
 
+# Sadece sözleşme/onay niteliğindeki kutular işaretlenir. Eskiden sayfadaki
+# TÜM görünür checkbox'lar körlemesine işaretleniyordu — Steam forma yeni bir
+# kutu eklerse (örn. içerik beyanı) auto_submit'le birlikte gözetimsiz yanlış
+# beyan riski doğuyordu.
+_AGREEMENT_TOKENS = (
+    "agree", "terms", "tos", "subscriber", "workshop",
+    "kabul", "sözleşme", "sozlesme", "onay", "şart", "sart",
+)
+
+
 def check_required_boxes(page):
     clicked = []
-    selectors = [
-        "input[type='checkbox']",
-    ]
-    for selector in selectors:
-        try:
-            boxes = page.locator(selector)
-            for i in range(boxes.count()):
-                box = boxes.nth(i)
-                try:
-                    if box.is_visible() and not box.is_checked():
-                        box.check(timeout=3000)
-                        clicked.append(i)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+    skipped = []
+    try:
+        boxes = page.locator("input[type='checkbox']")
+        for i in range(boxes.count()):
+            box = boxes.nth(i)
+            try:
+                if not box.is_visible() or box.is_checked():
+                    continue
+                # id + name + bağlı label metnini topla, allowlist'e bak
+                context_text = box.evaluate(
+                    """
+                    el => {
+                        const label_for = el.id
+                            ? (document.querySelector(`label[for='${el.id}']`)?.innerText || '')
+                            : '';
+                        const label_parent = el.closest('label')?.innerText || '';
+                        return [el.id, el.name, label_for, label_parent].join(' ').toLowerCase();
+                    }
+                    """
+                ) or ""
+                if any(tok in context_text for tok in _AGREEMENT_TOKENS):
+                    box.check(timeout=3000)
+                    clicked.append(i)
+                else:
+                    skipped.append(context_text.strip()[:60] or f"checkbox#{i}")
+            except Exception:
+                pass
+    except Exception:
+        pass
+    if skipped:
+        log(f"{len(skipped)} checkbox sözleşme/onay kutusu olmadığı için atlandı: {skipped}")
     return clicked
 
 

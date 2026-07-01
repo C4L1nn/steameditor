@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import time
 import subprocess
 import platform
 import threading
@@ -2518,7 +2519,7 @@ class App(ctk.CTk):
         # Progress dialog
         dlg = ctk.CTkToplevel(self)
         dlg.title("İşleniyor")
-        dlg.geometry("400x130")
+        dlg.geometry("400x170")
         dlg.configure(fg_color=C_BG2)
         dlg.grab_set()
         dlg.resizable(False, False)
@@ -2539,12 +2540,28 @@ class App(ctk.CTk):
         bar.set(0)
 
         created_all = []; errors = []; renamed = []
+        # Worker ile UI arasında paylaşılan iptal bayrağı. Pencerenin X'i de
+        # İptal gibi davranır — eskiden X'e basınca worker dlg.after üzerinde
+        # çöküyor ve _splitting sonsuza kadar True kalıyordu (bir daha hiçbir
+        # bölme çalışmıyordu).
+        cancel_flag = threading.Event()
+
+        def request_cancel():
+            cancel_flag.set()
+            lbl.configure(text="İptal ediliyor... (mevcut dosya bitince durur)")
+
+        AnimButton(dlg, text="İptal Et", height=30, text_color=C_ERROR,
+                   font=ctk.CTkFont("Segoe UI", 11),
+                   command=request_cancel).pack(fill="x", padx=20, pady=(2, 12))
+        dlg.protocol("WM_DELETE_WINDOW", request_cancel)
 
         def worker():
             # Aynı isim gövdesine (stem) sahip FARKLI kaynak dosyalar aynı
             # çıktı adını üretip birbirinin üstüne yazmasın diye say.
             seen_stems = {}
             for i, path in enumerate(file_paths, 1):
+                if cancel_flag.is_set():
+                    break
                 fname = os.path.basename(path)
                 try:
                     stem = os.path.splitext(fname)[0]
@@ -2558,25 +2575,35 @@ class App(ctk.CTk):
                     created_all.extend(r)
                 except Exception as e:
                     errors.append(f"{fname}: {e}")
-                dlg.after(0, lambda i=i, n=fname: _upd(i, n))
-            dlg.after(0, _done)
+                # self.after: dialog yok edilmiş olsa bile App ayakta olduğu
+                # için güvenli; _upd kendi içinde dlg'nin varlığını kontrol eder.
+                self.after(0, lambda i=i, n=fname: _upd(i, n))
+            self.after(0, _done)
 
         def _upd(i, name):
+            if not dlg.winfo_exists():
+                return
             bar.set(i / total)
             lbl.configure(text=f"{name}  ({i}/{total})")
 
         def _done():
             self._splitting = False
-            dlg.destroy()
-            if errors:
+            if dlg.winfo_exists():
+                dlg.destroy()
+            cancelled = cancel_flag.is_set()
+            if cancelled:
+                self._status.error(
+                    f"İptal edildi — {len(created_all)} parça oluşturulmuştu")
+            elif errors:
                 self._status.error(
                     f"{len(created_all)} parça, {len(errors)} hata")
             else:
                 self._status.ok(
                     f"{len(created_all)} parça oluşturuldu ({total} dosya) ✓")
-            self._show_split_preview(created_all)
+            if created_all:
+                self._show_split_preview(created_all)
             # Raporu hata VEYA çakışma-yeniden-adlandırma varsa göster
-            if errors or renamed:
+            if not cancelled and (errors or renamed):
                 self._show_batch_report(total, created_all, errors, renamed)
 
         threading.Thread(target=worker, daemon=True).start()
@@ -2788,7 +2815,19 @@ class App(ctk.CTk):
     def _prepare_steam_community_manifest(self, file_paths: list[str]) -> str:
         return build_steam_upload_manifest(file_paths, self._cfg, self.output_dir, self.template)
 
+    def _upload_in_progress(self) -> bool:
+        proc = getattr(self, "_upload_proc", None)
+        return proc is not None and proc.poll() is None
+
     def _run_steam_community_upload(self, file_paths: list[str] | None = None):
+        # Aynı anda iki uploader süreci aynı tarayıcı profilini (.steam_browser_profile)
+        # kilitleyip çakışır — aktif süreç bitmeden yenisi başlatılmaz.
+        if self._upload_in_progress():
+            self._status.error("Zaten süren bir upload var — önce onu bitir veya iptal et")
+            return
+        if getattr(self, "_queue_running", False):
+            self._status.error("Toplu upload kuyruğu çalışıyor — manuel upload beklemede")
+            return
         files = list(file_paths or self._last_outputs)
         if not files:
             self._status.error("Steam upload için önce çıktı oluştur")
@@ -2983,9 +3022,18 @@ class App(ctk.CTk):
 
         def worker():
             created, errors = [], []
+            # Toplu Böl'deki çakışma korumasının aynısı: aynı stem'e sahip
+            # farklı kaynaklar (foto.png + foto.jpg) birbirinin çıktısını ezmesin.
+            seen_stems = {}
             for path in file_paths:
                 try:
-                    created.extend(process_image(path, outdir, tmpl, cfg))
+                    stem = os.path.splitext(os.path.basename(path))[0]
+                    key = stem.lower()
+                    count = seen_stems.get(key, 0)
+                    seen_stems[key] = count + 1
+                    override = stem if count == 0 else f"{stem}_{count + 1}"
+                    created.extend(process_image(path, outdir, tmpl, cfg,
+                                                 name_override=override))
                 except Exception as e:
                     errors.append(f"{os.path.basename(path)}: {e}")
             self.after(0, lambda: self._queue_after_split(entries, index, created, errors, data, outdir))
@@ -3038,9 +3086,13 @@ class App(ctk.CTk):
             return
 
         self._queue_log(f"[{index + 1}/{total}] {name}: upload başladı")
-        self._queue_poll_upload(entries, index, status_path)
+        # Uploader'ın kendi elle-gönderim beklemesi 30 dk; kuyruk ona pay
+        # bırakıp 35 dk'da keser (yoksa süreç çöktüğünde/tarayıcı elle
+        # kapatıldığında kuyruk sonsuza kadar poll ederdi).
+        deadline = time.monotonic() + 35 * 60
+        self._queue_poll_upload(entries, index, status_path, deadline)
 
-    def _queue_poll_upload(self, entries, index, status_path):
+    def _queue_poll_upload(self, entries, index, status_path, deadline):
         if self._queue_cancelled:
             self._queue_finish(True)
             return
@@ -3061,7 +3113,21 @@ class App(ctk.CTk):
                     return
         except Exception:
             pass
-        self.after(1000, lambda: self._queue_poll_upload(entries, index, status_path))
+
+        # Uploader süreci status'u done/failed yapmadan öldüyse (çökme,
+        # tarayıcının elle kapatılması) beklemeye devam etme.
+        if not self._upload_in_progress():
+            self._queue_log(f"[{index + 1}/{total}] {name}: uploader beklenmedik "
+                            f"şekilde kapandı, sıradakine geçiliyor")
+            self.after(300, lambda: self._process_queue_item(entries, index + 1))
+            return
+        if time.monotonic() > deadline:
+            self._queue_log(f"[{index + 1}/{total}] {name}: upload 35 dk içinde "
+                            f"bitmedi, iptal edilip sıradakine geçiliyor")
+            self._cancel_steam_community_upload()
+            self.after(300, lambda: self._process_queue_item(entries, index + 1))
+            return
+        self.after(1000, lambda: self._queue_poll_upload(entries, index, status_path, deadline))
 
     def _open_upload_monitor(self, status_path: str, file_paths: list[str]):
         win = ctk.CTkToplevel(self)
