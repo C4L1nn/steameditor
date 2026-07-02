@@ -384,6 +384,34 @@ def test_process_image_uniform_patch_sets_last_byte(tmp_path):
         assert data[-1] == 0x21
 
 
+# ── render_showcase_preview ────────────────────────────────
+
+def test_showcase_preview_geometry_and_gaps(tmp_path):
+    """5+5 parça 2 satır olmalı; sütunlar arası gap pikselleri arka plan rengi."""
+    paths = []
+    for i in range(10):
+        p = tmp_path / f"piece_{i:02}.png"
+        Image.new("RGB", (150, 1250), (200, 40 + i * 10, 40)).save(p)
+        paths.append(str(p))
+    bg = (23, 26, 33)
+    out = core.render_showcase_preview(paths, parts_per_row=5,
+                                       cell_width=100, gap=4, bg_color=bg, pad=10)
+    # genişlik: 2*pad + 5*100 + 4*4 = 536
+    assert out.width == 536
+    # hücre yüksekliği: 1250 * (100/150) ≈ 833 → yükseklik: 2*10 + 2*833 + 4
+    cell_h = int(1250 * (100 / 150))
+    assert out.height == 20 + 2 * cell_h + 4
+    # ilk gap sütununun ortası arka plan rengi olmalı (10+100+2, satır ortası)
+    assert out.getpixel((112, 200)) == bg
+    # hücre içi arka plan OLMAMALI
+    assert out.getpixel((50, 200)) != bg
+
+
+def test_showcase_preview_empty_list_returns_placeholder():
+    out = core.render_showcase_preview([], parts_per_row=5)
+    assert out.width > 0 and out.height > 0
+
+
 # ── autocrop_borders ───────────────────────────────────────
 
 def test_autocrop_removes_solid_color_border():

@@ -510,6 +510,49 @@ def template_output_summary(img: Image.Image, template: dict, band_count: int = 
     return f"{len(boxes)} parça · ilk çıktı {first_w}×{first_h}px · canvas {canvas.width}×{canvas.height}px{patch}"
 
 
+def render_showcase_preview(piece_paths: list[str], parts_per_row: int = 5,
+                            cell_width: int = 116, gap: int = 4,
+                            bg_color: tuple[int, int, int] = (23, 26, 33),
+                            pad: int = 24) -> Image.Image:
+    """Bölünmüş parçaların Steam profil vitrinindeki görünümünü simüle eder:
+    koyu profil arka planı + Steam'in parçalar arası boşluklarıyla
+    parts_per_row sütunlu grid (çoklu bantta her bant bir satır). Parçalar
+    arası boşluğun görsel devamlılığı nerede bozduğu yüklemeden önce görülür.
+    GIF parçalarında ilk kare kullanılır."""
+    if not piece_paths:
+        return Image.new("RGB", (200, 100), bg_color)
+    parts_per_row = max(1, int(parts_per_row))
+
+    cells = []
+    for path in piece_paths:
+        try:
+            img = Image.open(path)
+            if os.path.splitext(path)[1].lower() == ".gif":
+                img.seek(0)
+            img = img.convert("RGB")
+            scale = cell_width / img.width if img.width else 1.0
+            cell = img.resize((cell_width, max(1, int(img.height * scale))), Image.LANCZOS)
+        except Exception as e:
+            _log.error(f"[SHOWCASE ERR] {path} | {e}")
+            cell = Image.new("RGB", (cell_width, cell_width), (60, 60, 60))
+        cells.append(cell)
+
+    rows = [cells[i:i + parts_per_row] for i in range(0, len(cells), parts_per_row)]
+    row_heights = [max(c.height for c in row) for row in rows]
+    canvas_w = pad * 2 + parts_per_row * cell_width + (parts_per_row - 1) * gap
+    canvas_h = pad * 2 + sum(row_heights) + (len(rows) - 1) * gap
+    canvas = Image.new("RGB", (canvas_w, canvas_h), bg_color)
+
+    y = pad
+    for row, rh in zip(rows, row_heights):
+        x = pad
+        for cell in row:
+            canvas.paste(cell, (x, y))
+            x += cell_width + gap
+        y += rh + gap
+    return canvas
+
+
 # ==========================================================
 #   ANİMASYONLU GIF SPLIT MOTORU
 # ==========================================================

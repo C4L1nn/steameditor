@@ -59,6 +59,7 @@ from core import (
     patch_png_last_byte,
     process_folder,
     process_image,
+    render_showcase_preview,
     render_template_preview,
     resize_cover,
     split_gif_frames,
@@ -602,6 +603,16 @@ class SplitPreview(ctk.CTkFrame):
                    command=self._clear_current
                    ).pack(side="right", padx=(0, 6), pady=6)
 
+        # Vitrin/parça görünümü değiştirici — pop-up yerine aynı panelde
+        # görünüm değişir (Steam profil vitrini simülasyonu).
+        self._view_btn = AnimButton(hdr, text="🎮 Vitrin",
+                   nc=C_BG3, hc=C_INDIGO,
+                   height=28, corner_radius=6,
+                   font=ctk.CTkFont("Segoe UI", 11),
+                   text_color=C_TEXT,
+                   command=self._toggle_view)
+        self._view_btn.pack(side="right", padx=(0, 6), pady=6)
+
         # Thumbnail şeridi
         self._scroll = ctk.CTkScrollableFrame(
             self,
@@ -611,17 +622,59 @@ class SplitPreview(ctk.CTkFrame):
             scrollbar_button_hover_color=C_ACCENT)
         self._scroll.pack(fill="both", expand=True, padx=10, pady=10)
 
-    def load(self, file_paths: list):
+        # Vitrin görünümü (başta gizli) — dikey kaydırılabilir simülasyon
+        self._showcase = ctk.CTkScrollableFrame(
+            self,
+            fg_color="transparent",
+            scrollbar_button_color=C_BG4,
+            scrollbar_button_hover_color=C_ACCENT)
+        self._showcase_lbl = ctk.CTkLabel(self._showcase, text="",
+                                          fg_color="transparent")
+        self._showcase_lbl.pack(pady=4)
+        self._showcase_mode = False
+        self._parts_per_row = 5
+
+    def _toggle_view(self):
+        self._showcase_mode = not self._showcase_mode
+        if self._showcase_mode:
+            self._scroll.pack_forget()
+            self._showcase.pack(fill="both", expand=True, padx=10, pady=10)
+            self._view_btn.configure(text="▤ Parçalar")
+            self._render_showcase()
+        else:
+            self._showcase.pack_forget()
+            self._scroll.pack(fill="both", expand=True, padx=10, pady=10)
+            self._view_btn.configure(text="🎮 Vitrin")
+
+    def _render_showcase(self):
+        if not self._file_paths:
+            self._showcase_lbl.configure(image=None, text="Gösterilecek parça yok")
+            return
+        sim = render_showcase_preview(self._file_paths, self._parts_per_row)
+        # Panel genişliğine sığdır (en fazla 1:1)
+        avail = max(400, self.winfo_width() - 60)
+        if sim.width > avail:
+            scale = avail / sim.width
+            sim = sim.resize((avail, max(1, int(sim.height * scale))), Image.LANCZOS)
+        ctk_img = make_ctk_image(sim)
+        self._showcase_lbl.configure(image=ctk_img, text="")
+        self._showcase_lbl._image = ctk_img
+
+    def load(self, file_paths: list, parts_per_row: int | None = None):
         """Parça dosyalarını yükleyip thumbnail olarak göster."""
         # Önceki içeriği temizle
         for w in self._scroll.winfo_children():
             w.destroy()
         self._tk_imgs.clear()
         self._file_paths = list(file_paths)
+        if parts_per_row:
+            self._parts_per_row = max(1, int(parts_per_row))
 
         n = len(file_paths)
         self._title_lbl.configure(
             text=f"✂  {n} parça oluşturuldu")
+        if self._showcase_mode:
+            self._render_showcase()
 
         for i, path in enumerate(file_paths):
             card = ctk.CTkFrame(
@@ -1406,7 +1459,11 @@ class App(ctk.CTk):
         self._last_outputs = list(file_paths)
         self._drop.grid_remove()
         self._split_prev.grid()
-        self._split_prev.load(file_paths)
+        # Vitrin simülasyonunda satır başına parça sayısı: uniform şablonda
+        # şablonun kendi parça sayısı (her bant bir satır), diğerlerinde 5'e kadar.
+        parts = self.template.get("parts")
+        per_row = parts if isinstance(parts, int) and parts > 0 else min(5, max(1, len(file_paths)))
+        self._split_prev.load(file_paths, parts_per_row=per_row)
         if self._cfg.get("open_output_after_process"):
             open_folder(self.output_dir)
         if self._cfg.get("auto_upload"):
