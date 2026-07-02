@@ -1619,6 +1619,28 @@ class App(ctk.CTk):
         self._apply_grid_geometry()
         self._draw_grid_overlay()
         self._show_onboarding_tip()
+        self._suggest_matching_template(W, H, gscale)
+
+    def _suggest_matching_template(self, W, H, gscale):
+        """Seçili şablon kaynağa sığmayıp büyütme gerekiyorsa, kaynağa %100
+        oturan başka bir uniform şablon varsa kullanıcıya söyle — sessiz
+        büyütme sürprizi yerine yol göster."""
+        if gscale >= 0.95:
+            return
+        best = None
+        for t2 in TEMPLATES:
+            if t2 is self.template or t2.get("mode") != "uniform":
+                continue
+            if W >= t2["width"] and H >= t2["height"]:
+                coverage = (t2["width"] * t2["height"]) / (W * H)
+                if best is None or coverage > best[1]:
+                    best = (t2, coverage)
+        if best:
+            name = best[0]["name"]
+            # _on_file_drop'un "Yüklendi" mesajı bunu ezmesin diye ertele
+            self.after(250, lambda: self._status.set(
+                f"💡 Bu kaynağa ({W}×{H}) birebir uyan şablon: {name} — sol menüden seç",
+                C_ACC_LT, C_ACC_LT, auto_reset=False))
 
     def _show_onboarding_tip(self):
         """İlk interaktif önizlemede TEK seferlik rehber balonu — grid'in
@@ -1697,9 +1719,21 @@ class App(ctk.CTk):
 
         W, H = pv["img_size"]
         patch = " · patch açık" if self.template.get("patch") else ""
-        scale_txt = "" if abs(gscale - 1.0) < 0.01 else f" · seçim %{round(gscale * 100)} → ölçeklenir"
+        th_total = th * pv["bands"]
+        # Ölçek durumunu AÇIKÇA söyle: %83 gibi bir oran yerine ne olacağını yaz
+        if abs(gscale - 1.0) < 0.01:
+            scale_txt = ""
+        elif gscale < 1.0:
+            scale_txt = (f" · ⚠ seçim {gw}×{gh} → {pv['tw_total']}×{th_total}'e "
+                         f"BÜYÜTÜLECEK (kalite kaybı)")
+        else:
+            scale_txt = f" · seçim {gw}×{gh} → {pv['tw_total']}×{th_total}'e küçültülecek"
+        req = self._current_band_count()
+        bant_txt = f"{pv['bands']} bant"
+        if req > pv["bands"]:
+            bant_txt += f" — {req} istendi, kaynağın boyu yetmiyor"
         first_w = bounds[0][1] - bounds[0][0]
-        info = (f"{pv['bands'] * parts} parça ({pv['bands']} bant) · konum {gx},{gy}"
+        info = (f"{pv['bands'] * parts} parça ({bant_txt}) · konum {gx},{gy}"
                 f"{scale_txt} · parça {first_w}×{th}px · kaynak {W}×{H}px{patch}"
                 f" · 🖱 sürükle / köşeden boyutlandır")
         batch_count = len(self._batch_files) if self._batch_files else 0
