@@ -109,7 +109,8 @@ F12_ARMED = False  # tek seferlik F12 tetikçisi
 
 
 def manual_crop_with_template(master, img_path: str, outdir: str, template: dict,
-                              cfg: dict | None = None, band_count: int = 1):
+                              cfg: dict | None = None, band_count: int = 1,
+                              preset_origin: tuple[int, int] | None = None):
     """
     Manuel crop modu:
     - Kullanıcı sadece İLK bandın İLK parçasının alanını (başlangıç
@@ -120,6 +121,9 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
       aşağıya doğru (her biri template height kadar) toplam band_count adet
       bağımsız bant daha otomatik üretilir (kaynağın boyu yetmediği yerde
       sessizce durur, kısmi/gerilmiş bant üretilmez).
+    - `preset_origin` verilirse dialog HİÇ açılmaz — konum ana önizlemedeki
+      sürüklenebilir grid'den gelir (bkz. App._setup_interactive_preview);
+      bu yol saf PIL olduğundan worker thread'de de çağrılabilir.
     """
     os.makedirs(outdir, exist_ok=True)
     base = os.path.splitext(os.path.basename(img_path))[0]
@@ -156,19 +160,22 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
     first = parts_info[0]
     tw = first["width"]
     th = first["height"]
-    if band_count > 1:
-        title = (f"Başlangıç (1. Bant) - {tw}x{th} alanını seç — aşağıya doğru "
-                 f"{band_count} bant otomatik devam edecek (ENTER ile onayla)")
+    if preset_origin is not None:
+        base_x = max(0, min(img_w - tw, int(preset_origin[0])))
+        base_y = max(0, min(img_h - th, int(preset_origin[1])))
     else:
-        title = f"Başlangıç - {tw}x{th} alanını seç (ENTER ile onayla)"
-    dlg = FixedCropDialog(master, img, tw, th, title=title)
-    bbox = dlg.get_bbox()
-    if not bbox:
-        return []
-
-    x1, y1, x2, y2 = bbox
-    base_x = x1
-    base_y = y1
+        if band_count > 1:
+            title = (f"Başlangıç (1. Bant) - {tw}x{th} alanını seç — aşağıya doğru "
+                     f"{band_count} bant otomatik devam edecek (ENTER ile onayla)")
+        else:
+            title = f"Başlangıç - {tw}x{th} alanını seç (ENTER ile onayla)"
+        dlg = FixedCropDialog(master, img, tw, th, title=title)
+        bbox = dlg.get_bbox()
+        if not bbox:
+            return []
+        x1, y1, x2, y2 = bbox
+        base_x = x1
+        base_y = y1
 
     created = []
     idx = 1
@@ -449,6 +456,14 @@ class DropZone(ctk.CTkFrame):
             self._on_batch(files_only)
         else:
             self._on_file(paths[0])
+
+    def bind_preview_mouse(self, on_press, on_drag):
+        """Önizleme görselinin üstünde sürükleme desteği (grid taşıma).
+        Boş (idle) alandaki tıklama davranışı değişmez — sadece görsel
+        gösterilirken aktif olan label'a bağlanır."""
+        self._preview_label.configure(cursor="fleur")
+        self._preview_label.bind("<ButtonPress-1>", on_press, add="+")
+        self._preview_label.bind("<B1-Motion>", on_drag, add="+")
 
     def show_image(self, img: Image.Image, info: str = "", batch_count: int = 0):
         self._stop_pulse()
@@ -950,6 +965,8 @@ class App(ctk.CTk):
 
         self.current_path = None
         self._batch_files = None         # çoklu seçim: belirli dosya listesi (klasörden ayrı)
+        self._grid_pos = None            # sürüklenebilir bölme grid'inin konumu (orijinal px)
+        self._pv = None                  # interaktif önizleme cache'i (ölçekli taban vs.)
         self._last_outputs = []
         self._splitting = False          # async bölme sırasında tekrar tetiklemeyi engelle
         self._upload_proc = None         # çalışan Community uploader süreç tutamacı
@@ -1272,6 +1289,8 @@ class App(ctk.CTk):
         self._drop = DropZone(main, self._on_file_drop, self._on_batch_drop,
                               initialdir_getter=lambda: self._cfg.get("last_input_dir", ""))
         self._drop.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
+        # Bölme grid'i önizlemenin üstünde fareyle sürüklenebilir
+        self._drop.bind_preview_mouse(self._grid_press, self._grid_drag)
 
         # Split önizleme (başta gizli)
         self._split_prev = SplitPreview(
@@ -1411,6 +1430,7 @@ class App(ctk.CTk):
 
     def _on_file_drop(self, path):
         self._batch_files = None
+        self._grid_pos = None  # yeni dosyada grid varsayılan konuma (ortaya) döner
         # Sürüklenen/seçilen yol klasörse toplu giriş gibi davran
         if os.path.isdir(path):
             self.current_path = path
@@ -1429,6 +1449,7 @@ class App(ctk.CTk):
         if not valid:
             self._status.error("Seçilen dosyalar desteklenen bir formatta değil")
             return
+        self._grid_pos = None
         self._batch_files = valid
         self.current_path = valid[0]
         self._remember_input_dir(os.path.dirname(valid[0]))
@@ -1450,14 +1471,97 @@ class App(ctk.CTk):
             if hasattr(img, "n_frames") and img.n_frames > 1:
                 img.seek(0)
             img = autocrop_borders(img.convert("RGBA"), self._cfg)
+            tmpl = self.template
+            # Uniform + statik görsel + kaynak grid'den büyükse: interaktif
+            # önizleme (grid fareyle sürüklenir, Böl o konumdan keser).
+            if (tmpl.get("mode") == "uniform"
+                    and not path.lower().endswith(".gif")
+                    and img.width >= tmpl["width"] and img.height >= tmpl["height"]):
+                self._setup_interactive_preview(img)
+                return
+            self._pv = None
+            self._grid_pos = None
             bands = self._current_band_count()
-            preview = render_template_preview(img, self.template, self._cfg, band_count=bands)
+            preview = render_template_preview(img, tmpl, self._cfg, band_count=bands)
             batch_count = len(self._batch_files) if self._batch_files else 0
             self._drop.show_image(preview,
-                                  template_output_summary(img, self.template, band_count=bands),
+                                  template_output_summary(img, tmpl, band_count=bands),
                                   batch_count=batch_count)
         except Exception as e:
             self._status.error(f"Önizleme hatası: {e}")
+
+    # ── İnteraktif önizleme (sürüklenebilir bölme grid'i) ──
+    def _setup_interactive_preview(self, img):
+        """Efektli tam görselden ölçekli bir taban cache'ler; grid overlay'i
+        her sürüklemede sadece bu tabana yeniden çizilir (hızlı)."""
+        tmpl = self.template
+        tw_total, th = tmpl["width"], tmpl["height"]
+        parts = tmpl["parts"]
+        img = _apply_effects_pipeline(img, self._cfg)
+        W, H = img.size
+
+        bands_fit = max(1, min(self._current_band_count(), H // th))
+        gw, gh = tw_total, th * bands_fit
+        if self._grid_pos is None:
+            gx, gy = (W - gw) // 2, max(0, (H - gh) // 2)  # varsayılan: ortala
+        else:
+            gx, gy = self._grid_pos
+        gx = max(0, min(W - gw, int(gx)))
+        gy = max(0, min(H - gh, int(gy)))
+        self._grid_pos = (gx, gy)
+
+        disp_w = max(self._drop.winfo_width(), 700) - 24
+        disp_h = max(self._drop.winfo_height(), 480) - 24
+        disp = img.convert("RGB")
+        disp.thumbnail((max(1, disp_w), max(1, disp_h)), Image.LANCZOS)
+
+        self._pv = {"img_size": (W, H), "disp": disp, "scale": disp.width / W,
+                    "parts": parts, "band_h": th, "bands": bands_fit,
+                    "slice_w": tw_total // parts, "tw_total": tw_total,
+                    "grid": (gw, gh)}
+        self._draw_grid_overlay()
+
+    def _draw_grid_overlay(self):
+        pv = self._pv
+        if not pv:
+            return
+        base = pv["disp"].copy()
+        d = ImageDraw.Draw(base, "RGBA")
+        s = pv["scale"]
+        gx, gy = self._grid_pos
+        sw, parts, th = pv["slice_w"], pv["parts"], pv["band_h"]
+        for b in range(pv["bands"]):
+            y1 = gy + b * th
+            for i in range(parts):
+                x1 = gx + i * sw
+                x2 = gx + (pv["tw_total"] if i == parts - 1 else (i + 1) * sw)
+                fill = (249, 115, 22, 26) if (b * parts + i) % 2 == 0 else (99, 102, 241, 22)
+                d.rectangle((x1 * s, y1 * s, x2 * s, (y1 + th) * s),
+                            fill=fill, outline=(249, 115, 22, 255), width=2)
+        W, H = pv["img_size"]
+        patch = " · patch açık" if self.template.get("patch") else ""
+        info = (f"{pv['bands'] * parts} parça ({pv['bands']} bant) · konum {gx},{gy} · "
+                f"parça {sw}×{th}px · kaynak {W}×{H}px{patch} · 🖱 grid'i sürükle")
+        batch_count = len(self._batch_files) if self._batch_files else 0
+        self._drop.show_image(base, info, batch_count=batch_count)
+
+    def _grid_press(self, e):
+        if self._pv:
+            self._pv["press"] = (e.x, e.y, *self._grid_pos)
+
+    def _grid_drag(self, e):
+        pv = self._pv
+        if not pv or "press" not in pv:
+            return
+        px, py, ox, oy = pv["press"]
+        s = pv["scale"] or 1.0
+        W, H = pv["img_size"]
+        gw, gh = pv["grid"]
+        gx = int(max(0, min(W - gw, ox + (e.x - px) / s)))
+        gy = int(max(0, min(H - gh, oy + (e.y - py) / s)))
+        if (gx, gy) != self._grid_pos:
+            self._grid_pos = (gx, gy)
+            self._draw_grid_overlay()
 
     def _pick_file(self):
         initial = self._cfg.get("last_input_dir", "")
@@ -1510,12 +1614,22 @@ class App(ctk.CTk):
         template = self.template
         cfg = self._cfg
         outdir = self.output_dir
+        # İnteraktif grid aktifse Böl, önizlemede GÖRÜNEN konumdan native
+        # keser (WYSIWYG) — preset_origin'li manuel crop yolu saf PIL olduğu
+        # için worker thread'de güvenle çalışır.
+        grid_origin = self._grid_pos if self._pv else None
+        grid_bands = self._pv["bands"] if self._pv else 1
         self._splitting = True
         self._status.busy("Bölünüyor...")
 
         def worker():
             try:
-                created = process_image(path, outdir, template, cfg)
+                if grid_origin is not None:
+                    created = manual_crop_with_template(
+                        self, path, outdir, template, cfg,
+                        band_count=grid_bands, preset_origin=grid_origin)
+                else:
+                    created = process_image(path, outdir, template, cfg)
                 self.after(0, lambda: self._on_split_done(created))
             except Exception as e:
                 self.after(0, lambda e=e: self._status.error(str(e)))
