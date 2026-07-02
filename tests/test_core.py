@@ -384,6 +384,52 @@ def test_process_image_uniform_patch_sets_last_byte(tmp_path):
         assert data[-1] == 0x21
 
 
+# ── çıktı formatı (save_output_piece) ─────────────────────
+
+def test_process_image_jpg_output_format(tmp_path):
+    src = tmp_path / "src.png"
+    Image.new("RGB", (750, 500), (30, 60, 90)).save(src)
+    template = {"name": "t", "mode": "uniform", "width": 750, "height": 1250, "parts": 5,
+                "patch": True, "prefix": "t"}
+    cfg = {"output_format": "jpg", "jpg_quality": 85}
+    created = core.process_image(str(src), str(tmp_path), template, cfg)
+    assert len(created) == 5
+    for path in created:
+        assert path.endswith(".jpg")
+        img = Image.open(path)
+        assert img.format == "JPEG"
+        # patch JPG'de UYGULANMAMALI — geçerli JPEG, EOI (0xFFD9) ile bitmeli
+        # (patch uygulansaydı son byte 0x21 olurdu)
+        with open(path, "rb") as f:
+            data = f.read()
+        assert data[-2:] == b"\xff\xd9", "JPG son-byte patch'lenmiş görünüyor"
+
+
+def test_process_image_png_default_when_format_missing(tmp_path):
+    src = tmp_path / "src.png"
+    Image.new("RGB", (300, 200), (1, 2, 3)).save(src)
+    template = {"name": "t", "mode": "single", "width": 100, "height": 100, "prefix": "shot"}
+    created = core.process_image(str(src), str(tmp_path), template, {})
+    assert created[0].endswith(".png")
+
+
+def test_jpg_quality_changes_output_size(tmp_path):
+    """Kalite düşünce dosya küçülmeli — slider'ın gerçekten işe yaradığının kanıtı."""
+    src = tmp_path / "src.png"
+    img = Image.new("RGB", (600, 400))
+    for y in range(400):
+        for x in range(0, 600, 3):
+            img.putpixel((x, y), ((x * 7) % 255, (y * 5) % 255, (x + y) % 255))
+    img.save(src)
+    template = {"name": "t", "mode": "single", "width": 400, "height": 300, "prefix": "s"}
+    hi = core.process_image(str(src), str(tmp_path / "hi"), template,
+                            {"output_format": "jpg", "jpg_quality": 95})
+    lo = core.process_image(str(src), str(tmp_path / "lo"), template,
+                            {"output_format": "jpg", "jpg_quality": 45})
+    import os as _os
+    assert _os.path.getsize(lo[0]) < _os.path.getsize(hi[0])
+
+
 def test_process_image_multi_creates_expected_sizes(tmp_path):
     src = tmp_path / "src.png"
     Image.new("RGB", (400, 300), (1, 2, 3)).save(src)

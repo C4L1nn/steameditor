@@ -159,6 +159,32 @@ class SettingsPage(ctk.CTkFrame):
             checkmark_color=C_BG0,
         ).pack(anchor="w", padx=4, pady=8)
 
+        ctk.CTkLabel(p, text="ÇIKTI",
+                     font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
+                     text_color=C_DIM).pack(anchor="w", padx=4, pady=(14, 4))
+
+        fmt_row = ctk.CTkFrame(p, fg_color="transparent")
+        fmt_row.pack(fill="x", padx=4, pady=(0, 4))
+        ctk.CTkLabel(fmt_row, text="Görsel formatı",
+                     font=ctk.CTkFont("Segoe UI", 10),
+                     text_color=C_DIM).pack(side="left")
+        fmt_var = StringVar(value="JPG" if cfg.get("output_format") == "jpg" else "PNG")
+        ctk.CTkOptionMenu(
+            fmt_row, values=["PNG", "JPG"], variable=fmt_var, width=110,
+            fg_color=C_BG3, button_color=C_ACCENT, button_hover_color=C_ACC_LT,
+            dropdown_fg_color=C_BG3, dropdown_hover_color=C_BG4,
+            text_color=C_TEXT).pack(side="right")
+        ctk.CTkLabel(p, text="Not: Workshop son-byte patch hilesi sadece PNG'de uygulanır; "
+                             "JPG daha küçük dosya üretir ama patch atlanır.",
+                     font=ctk.CTkFont("Segoe UI", 9), text_color=C_DIM,
+                     wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 4))
+        jpg_quality_slider = self._slider_row(p, "JPG kalitesi", cfg, "jpg_quality", 90,
+                                              from_=40, to=100, fmt="{}")
+        gif_lossy_slider = self._slider_row(p, "GIF sıkıştırma gücü (lossy)", cfg, "gif_lossy", 80,
+                                            from_=0, to=200, fmt="{}")
+        gif_colors_slider = self._slider_row(p, "GIF renk sayısı", cfg, "gif_colors", 128,
+                                             from_=16, to=256, fmt="{}")
+
         ctk.CTkLabel(p, text="STEAM COMMUNITY OTOMASYONU",
                      font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
                      text_color=C_DIM).pack(anchor="w", padx=4, pady=(14, 4))
@@ -207,6 +233,10 @@ class SettingsPage(ctk.CTkFrame):
             cfg["open_output_after_process"] = bool(open_var.get())
             cfg["auto_upload"] = bool(upload_var.get())
             cfg["steam_community_auto_submit"] = bool(community_submit_var.get())
+            cfg["output_format"] = "jpg" if fmt_var.get() == "JPG" else "png"
+            cfg["jpg_quality"] = int(jpg_quality_slider.get())
+            cfg["gif_lossy"] = int(gif_lossy_slider.get())
+            cfg["gif_colors"] = int(gif_colors_slider.get())
             for key, entry in community_entries.items():
                 if key == "steam_community_title_template":
                     val = entry.get()  # görünmez/boşluklu başlığı olduğu gibi koru

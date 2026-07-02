@@ -256,6 +256,10 @@ def load_config() -> dict:
         "auto_enhance_enabled": False,
         "auto_enhance_intensity": 50,
         "multi_band_count": 3,
+        "output_format": "png",     # png | jpg (jpg'de patch uygulanmaz)
+        "jpg_quality": 90,
+        "gif_lossy": 80,
+        "gif_colors": 128,
     }
     if not os.path.exists(_CONFIG_FILE):
         return defaults

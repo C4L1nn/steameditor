@@ -133,6 +133,30 @@ _BORDER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Border T
 #   Yardımcı: Cover Resize (oranı bozmadan kırpma)
 # ==========================================================
 
+def save_output_piece(piece: Image.Image, outdir: str, stem: str,
+                      cfg: dict | None, patch: bool) -> str:
+    """Parçayı cfg'deki çıktı formatı/kalitesiyle kaydeder, tam yolu döner.
+    stem: uzantısız dosya adı. JPG seçiliyse RGB'ye çevrilip quality ile
+    yazılır ve son-byte patch UYGULANMAZ (Workshop hilesi PNG'ye özgü;
+    JPG'nin son byte'ı bozulursa görüntüleyiciler dosyayı reddedebilir)."""
+    fmt = str((cfg or {}).get("output_format", "png")).lower()
+    if fmt == "jpg":
+        full = os.path.join(outdir, stem + ".jpg")
+        raw_q = (cfg or {}).get("jpg_quality", 90)
+        if raw_q is None:
+            raw_q = 90
+        quality = max(1, min(100, int(raw_q)))
+        piece.convert("RGB").save(full, quality=quality, optimize=True)
+        if patch:
+            _log.info(f"[PATCH SKIP] JPG çıktısında son-byte patch atlandı: {stem}.jpg")
+        return full
+    full = os.path.join(outdir, stem + ".png")
+    piece.save(full)
+    if patch:
+        patch_png_last_byte(full)
+    return full
+
+
 def resize_cover(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
     """
     Görseli oranı bozmadan hedef alanı tamamen dolduracak şekilde büyüt,
@@ -515,6 +539,12 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
     if not frames:
         return created_files
 
+    # GIF optimizasyon gücü ayarlanabilir (Ayarlar > Genel > Çıktı)
+    raw_lossy = (cfg or {}).get("gif_lossy", 80)
+    raw_colors = (cfg or {}).get("gif_colors", 128)
+    gif_lossy = max(0, min(200, int(raw_lossy if raw_lossy is not None else 80)))
+    gif_colors = max(2, min(256, int(raw_colors if raw_colors is not None else 128)))
+
     # -------------------------------------------------------
     # MODE: UNIFORM
     # -------------------------------------------------------
@@ -534,7 +564,7 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
             part_frames = [fr.crop((x1, 0, x2, target_h)) for fr in scaled]
             outpath = os.path.join(outdir, f"{prefix}_{base}_{i+1:02}.gif")
             _save_animated_gif(part_frames, durations, outpath, False)
-            optimize_gif_file(outpath)
+            optimize_gif_file(outpath, gif_lossy, gif_colors)
             if template.get("patch", False):
                 patch_gif_trailing_byte(outpath)
             created_files.append(outpath)
@@ -556,7 +586,7 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
             part_frames = [fr.crop((cur_x, 0, cur_x + pw, ph)) for fr in scaled]
             outpath = os.path.join(outdir, f"{prefix}_{base}_{idx:02}.gif")
             _save_animated_gif(part_frames, durations, outpath, False)
-            optimize_gif_file(outpath)
+            optimize_gif_file(outpath, gif_lossy, gif_colors)
             created_files.append(outpath)
             cur_x += pw
 
@@ -569,7 +599,7 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
         scaled = [_apply_effects_pipeline(resize_cover(f, tw, th), cfg) for f in frames]
         outpath = os.path.join(outdir, f"{prefix}_{base}.gif")
         _save_animated_gif(scaled, durations, outpath, False)
-        optimize_gif_file(outpath)
+        optimize_gif_file(outpath, gif_lossy, gif_colors)
         created_files.append(outpath)
 
     _log.info(f"[GIF SPLIT] {os.path.basename(path)} -> {len(created_files)} animasyonlu parca ({mode})")
@@ -623,13 +653,8 @@ def process_image(path: str, outdir: str, template: dict, cfg: dict | None = Non
             x1 = i * slice_w
             x2 = target_w if i == parts - 1 else x1 + slice_w
             piece = img.crop((x1, 0, x2, target_h))
-            fname = f"{prefix}_{base}_{i+1:02}.png"
-            full = os.path.join(outdir, fname)
-            piece.save(full)
-
-            if template.get("patch"):
-                patch_png_last_byte(full)
-
+            full = save_output_piece(piece, outdir, f"{prefix}_{base}_{i+1:02}",
+                                     cfg, bool(template.get("patch")))
             created.append(full)
 
     # -------------------------------
@@ -648,11 +673,8 @@ def process_image(path: str, outdir: str, template: dict, cfg: dict | None = Non
             ph = part["height"]
 
             piece = base_img.crop((cur_x, 0, cur_x + pw, ph))
-
-            fname = f"{prefix}_{base}_{index:02}.png"
-            full = os.path.join(outdir, fname)
-            piece.save(full)
-
+            full = save_output_piece(piece, outdir, f"{prefix}_{base}_{index:02}",
+                                     cfg, False)
             created.append(full)
             index += 1
             cur_x += pw
@@ -664,9 +686,8 @@ def process_image(path: str, outdir: str, template: dict, cfg: dict | None = Non
         w = template["width"]
         h = template["height"]
         piece = _apply_effects_pipeline(resize_cover(original, w, h), cfg)
-        fname = f"{prefix}_{base}.png"
-        full = os.path.join(outdir, fname)
-        piece.save(full)
+        full = save_output_piece(piece, outdir, f"{prefix}_{base}",
+                                 cfg, bool(template.get("patch")))
         created.append(full)
 
     return created
