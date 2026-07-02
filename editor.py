@@ -19,7 +19,7 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "customtkinter"])
     import customtkinter as ctk
 
-from tkinter import filedialog, messagebox, colorchooser, Text, Toplevel, Canvas, BooleanVar, StringVar
+from tkinter import filedialog, messagebox, colorchooser, Text, Toplevel, Canvas, BooleanVar, StringVar, Menu
 from tkinter import ttk
 from PIL import Image, ImageTk, ImageSequence, ImageDraw, ImageFilter
 
@@ -487,15 +487,21 @@ class DropZone(ctk.CTkFrame):
         else:
             self._on_file(paths[0])
 
-    def bind_preview_mouse(self, on_press, on_drag, on_release=None):
-        """Önizleme görselinin üstünde sürükleme desteği (grid/metin taşıma).
-        Boş (idle) alandaki tıklama davranışı değişmez — sadece görsel
-        gösterilirken aktif olan label'a bağlanır."""
+    def bind_preview_mouse(self, on_press, on_drag, on_release=None,
+                           on_double=None, on_context=None):
+        """Önizleme görselinin üstünde fare desteği (grid/metin taşıma,
+        çift tık = böl, sağ tık = hizalama menüsü). Boş (idle) alandaki
+        tıklama davranışı değişmez — sadece görsel gösterilirken aktif
+        olan label'a bağlanır."""
         self._preview_label.configure(cursor="fleur")
         self._preview_label.bind("<ButtonPress-1>", on_press, add="+")
         self._preview_label.bind("<B1-Motion>", on_drag, add="+")
         if on_release:
             self._preview_label.bind("<ButtonRelease-1>", on_release, add="+")
+        if on_double:
+            self._preview_label.bind("<Double-Button-1>", on_double, add="+")
+        if on_context:
+            self._preview_label.bind("<Button-3>", on_context, add="+")
 
     def show_image(self, img: Image.Image, info: str = "", batch_count: int = 0):
         self._stop_pulse()
@@ -594,11 +600,12 @@ class SplitPreview(ctk.CTkFrame):
     _THUMB_H = 180
 
     def __init__(self, master, on_back, on_open, on_rerun, on_clear,
-                 on_open_file, on_copy_path, on_delete_file, **kw):
+                 on_open_file, on_copy_path, on_delete_file, on_upload=None, **kw):
         kw.setdefault("corner_radius", 14)
         kw.setdefault("border_width", 2)
         super().__init__(master, fg_color=C_BG2,
                          border_color=C_ACCENT, **kw)
+        self._on_upload = on_upload
         self._on_back = on_back
         self._on_open = on_open
         self._on_rerun = on_rerun
@@ -652,6 +659,17 @@ class SplitPreview(ctk.CTkFrame):
                    text_color=C_ERROR,
                    command=self._clear_current
                    ).pack(side="right", padx=(0, 6), pady=6)
+
+        # Akış kısayolu: bölme sonrası tek tıkla upload — sidebar'a gitmeye
+        # gerek kalmaz (böl -> kontrol et -> yükle akışı tek panelde biter).
+        if self._on_upload:
+            AnimButton(hdr, text="☁ Steam'e Yükle",
+                       nc=C_ACC_DK, hc=C_ACCENT, variant="accent",
+                       height=28, corner_radius=6,
+                       font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
+                       text_color=C_TEXT,
+                       command=self._on_upload
+                       ).pack(side="right", padx=(0, 6), pady=6)
 
         # Vitrin/parça görünümü değiştirici — pop-up yerine aynı panelde
         # görünüm değişir (Steam profil vitrini simülasyonu).
@@ -999,6 +1017,7 @@ class App(ctk.CTk):
         self._batch_files = None         # çoklu seçim: belirli dosya listesi (klasörden ayrı)
         self._grid_pos = None            # sürüklenebilir bölme grid'inin konumu (orijinal px)
         self._grid_scale = 1.0           # grid bölge ölçeği (köşeden büyüt/küçült)
+        self._live_showcase = False      # sürüklerken köşede canlı vitrin PiP'i
         self._pv = None                  # interaktif önizleme cache'i (ölçekli taban vs.)
         self._last_outputs = []
         self._splitting = False          # async bölme sırasında tekrar tetiklemeyi engelle
@@ -1322,8 +1341,23 @@ class App(ctk.CTk):
         self._drop = DropZone(main, self._on_file_drop, self._on_batch_drop,
                               initialdir_getter=lambda: self._cfg.get("last_input_dir", ""))
         self._drop.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
-        # Bölme grid'i ve metin katmanı önizlemenin üstünde fareyle sürüklenebilir
-        self._drop.bind_preview_mouse(self._grid_press, self._grid_drag, self._grid_release)
+        # Bölme grid'i ve metin katmanı önizlemenin üstünde fareyle sürüklenebilir;
+        # çift tık = anında Böl, sağ tık = hizalama menüsü
+        self._drop.bind_preview_mouse(self._grid_press, self._grid_drag, self._grid_release,
+                                      on_double=self._preview_double_click,
+                                      on_context=self._preview_context_menu)
+        self._grid_menu = Menu(self, tearoff=0, bg=C_BG2, fg=C_TEXT,
+                               activebackground=C_ACCENT, activeforeground=C_BG0,
+                               relief="flat", bd=0)
+        for label, where in [("Ortala", "center"), ("Üste Hizala", "top"),
+                             ("Alta Hizala", "bottom"), ("Sola Hizala", "left"),
+                             ("Sağa Hizala", "right")]:
+            self._grid_menu.add_command(label=label,
+                                        command=lambda w=where: self._grid_snap(w))
+        self._grid_menu.add_separator()
+        self._grid_menu.add_command(label="🎮 Canlı Vitrin Aç/Kapat",
+                                    command=self._toggle_live_showcase)
+        self._grid_menu.add_command(label="✂ Böl", command=self._split_single)
 
         # Split önizleme (başta gizli)
         self._split_prev = SplitPreview(
@@ -1335,6 +1369,7 @@ class App(ctk.CTk):
             self._open_file,
             self._copy_path,
             self._delete_output_file,
+            on_upload=self._run_steam_community_upload,
         )
         # grid'e dahil et ama görünmez bırak
         self._split_prev.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
@@ -1407,6 +1442,12 @@ class App(ctk.CTk):
         self._band_entry.bind("<KeyRelease>", lambda _e: (
             self._load_preview(self.current_path)
             if self.current_path and os.path.isfile(self.current_path) else None))
+
+        AnimButton(btn_f2, text="🎮", width=44, height=36,
+                   nc=C_BG3, hc=C_INDIGO,
+                   font=ctk.CTkFont("Segoe UI", 13),
+                   command=self._toggle_live_showcase
+                   ).grid(row=0, column=3, padx=(8, 0))
 
         # Status bar
         self._status = StatusBar(main)
@@ -1599,6 +1640,16 @@ class App(ctk.CTk):
         d.rectangle((cx - 7, cy - 7, cx + 7, cy + 7),
                     fill=(249, 115, 22, 255), outline=(8, 8, 8, 255), width=2)
 
+        # Canlı vitrin PiP'i: parçaların Steam boşluklarıyla dizilmiş hali,
+        # sağ-alt köşede, sürüklerken canlı güncellenir
+        if self._live_showcase:
+            pip = self._compose_pip_showcase(base)
+            px = base.width - pip.width - 10
+            py = base.height - pip.height - 10
+            base.paste(pip, (px, py))
+            d.rectangle((px - 1, py - 1, px + pip.width, py + pip.height),
+                        outline=(249, 115, 22, 255), width=1)
+
         W, H = pv["img_size"]
         patch = " · patch açık" if self.template.get("patch") else ""
         scale_txt = "" if abs(gscale - 1.0) < 0.01 else f" · seçim %{round(gscale * 100)} → ölçeklenir"
@@ -1631,6 +1682,72 @@ class App(ctk.CTk):
             pv["press"] = ("resize", e.x, e.y, self._grid_scale, max(1.0, gw * s))
         else:
             pv["press"] = ("move", e.x, e.y, gx, gy)
+
+    def _preview_double_click(self, _e=None):
+        """Önizlemeye çift tık: gridin olduğu yerden anında böl."""
+        if self._pv:
+            self._split_single()
+
+    def _preview_context_menu(self, e):
+        if self._pv:
+            try:
+                self._grid_menu.tk_popup(e.x_root, e.y_root)
+            finally:
+                self._grid_menu.grab_release()
+
+    def _grid_snap(self, where: str):
+        pv = self._pv
+        if not pv:
+            return
+        W, H = pv["img_size"]
+        gw, gh = pv["grid"]
+        gx, gy = self._grid_pos
+        if where == "center":
+            gx, gy = (W - gw) // 2, (H - gh) // 2
+        elif where == "top":
+            gy = 0
+        elif where == "bottom":
+            gy = H - gh
+        elif where == "left":
+            gx = 0
+        elif where == "right":
+            gx = W - gw
+        self._grid_pos = (max(0, gx), max(0, gy))
+        self._draw_grid_overlay()
+
+    def _toggle_live_showcase(self):
+        self._live_showcase = not self._live_showcase
+        if self._pv:
+            self._draw_grid_overlay()
+
+    def _compose_pip_showcase(self, base):
+        """Grid'in mevcut konumundaki parçaları Steam boşluklarıyla dizen
+        küçük picture-in-picture kompoziti (ölçekli tabandan kesildiği için
+        her sürükleme karesinde ucuz)."""
+        pv = self._pv
+        s = pv["scale"]
+        gscale = self._grid_scale
+        gx, gy = self._grid_pos
+        parts, th = pv["parts"], pv["band_h"]
+        sw_g = pv["slice_w"] * gscale
+        th_g = th * gscale
+        gap, pad = 3, 8
+        cell_w = 26
+        cell_h = max(1, int(cell_w * th / max(1, pv["slice_w"])))
+        rows = pv["bands"]
+        pip = Image.new("RGB", (pad * 2 + parts * cell_w + (parts - 1) * gap,
+                                pad * 2 + rows * cell_h + (rows - 1) * gap), (23, 26, 33))
+        for b in range(rows):
+            for i in range(parts):
+                box = (int((gx + i * sw_g) * s), int((gy + b * th_g) * s),
+                       max(int((gx + i * sw_g) * s) + 1, int((gx + (i + 1) * sw_g) * s)),
+                       max(int((gy + b * th_g) * s) + 1, int((gy + (b + 1) * th_g) * s)))
+                cell = base.crop(box).resize((cell_w, cell_h), Image.BILINEAR)
+                pip.paste(cell, (pad + i * (cell_w + gap), pad + b * (cell_h + gap)))
+        # Önizlemeye sığdır (en fazla ~%55 yükseklik)
+        pip.thumbnail((max(60, base.width // 3), max(60, int(base.height * 0.55))),
+                      Image.BILINEAR)
+        return pip
 
     def _grid_release(self, _e=None):
         pv = self._pv
