@@ -129,7 +129,9 @@ _PROJECTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam
 def load_custom_presets():
     """
     steam_splitter_presets.json içindeki özel şablonları TEMPLATES listesine ekler.
-    Sadece 'uniform' modlu, henüz listede olmayan şablonlar eklenir.
+    Şema: name, mode (yoksa 'uniform' — eski dosyalarla geriye uyumlu),
+    width/height (+parts sayısı uniform'da), multi'de parts listesi
+    [{width,height},...], last_byte, prefix.
     """
     if not os.path.exists(_PRESETS_FILE):
         return
@@ -139,19 +141,28 @@ def load_custom_presets():
         existing_names = {t["name"] for t in TEMPLATES}
         for p in data:
             name = p.get("name", "")
-            # JSON formatı: name, width, height, parts, last_byte, prefix
-            # Zaten varsa atla
-            if name in existing_names:
+            if not name or name in existing_names:
                 continue
-            tmpl = {
-                "name": name,
-                "mode": "uniform",
-                "width": p.get("width", 750),
-                "height": p.get("height", 1250),
-                "parts": p.get("parts", 5),
-                "patch": p.get("last_byte", 0) != 0,
-                "prefix": p.get("prefix", "cus"),
-            }
+            mode = p.get("mode", "uniform")
+            patch = p.get("last_byte", 0) != 0
+            prefix = p.get("prefix", "cus")
+            if mode == "multi":
+                parts = [
+                    {"width": int(x.get("width", 100)), "height": int(x.get("height", 100))}
+                    for x in p.get("parts", []) if isinstance(x, dict)
+                ]
+                if not parts:
+                    continue
+                tmpl = {"name": name, "mode": "multi", "parts": parts,
+                        "patch": patch, "prefix": prefix}
+            elif mode == "single":
+                tmpl = {"name": name, "mode": "single",
+                        "width": p.get("width", 650), "height": p.get("height", 850),
+                        "patch": patch, "prefix": prefix}
+            else:  # uniform (mode alanı olmayan eski kayıtlar dahil)
+                tmpl = {"name": name, "mode": "uniform",
+                        "width": p.get("width", 750), "height": p.get("height", 1250),
+                        "parts": p.get("parts", 5), "patch": patch, "prefix": prefix}
             TEMPLATES.append(tmpl)
             existing_names.add(name)
     except Exception as e:
@@ -160,22 +171,31 @@ def load_custom_presets():
 
 def save_custom_presets():
     """
-    TEMPLATES listesinden 'cus' prefix'li (özel) şablonları JSON'a yazar.
+    TEMPLATES listesinden özel (built-in olmayan) şablonları JSON'a yazar.
     İlk 3 built-in şablon korunur, kaydedilmez.
     """
     try:
         custom = []
         for t in TEMPLATES:
-            if t.get("prefix") not in ("work", "art", "shot"):
-                entry = {
-                    "name": t["name"],
-                    "width": t.get("width", 750),
-                    "height": t.get("height", 1250),
-                    "parts": t.get("parts", 5),
-                    "last_byte": 33 if t.get("patch") else 0,
-                    "prefix": t.get("prefix", "cus"),
-                }
-                custom.append(entry)
+            if t.get("prefix") in ("work", "art", "shot"):
+                continue
+            mode = t.get("mode", "uniform")
+            entry = {
+                "name": t["name"],
+                "mode": mode,
+                "last_byte": 33 if t.get("patch") else 0,
+                "prefix": t.get("prefix", "cus"),
+            }
+            if mode == "multi":
+                entry["parts"] = [
+                    {"width": p["width"], "height": p["height"]} for p in t.get("parts", [])
+                ]
+            else:
+                entry["width"] = t.get("width", 750)
+                entry["height"] = t.get("height", 1250)
+                if mode == "uniform":
+                    entry["parts"] = t.get("parts", 5)
+            custom.append(entry)
         with open(_PRESETS_FILE, "w", encoding="utf-8") as f:
             json.dump(custom, f, ensure_ascii=False, indent=2)
     except Exception as e:

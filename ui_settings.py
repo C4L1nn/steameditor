@@ -487,6 +487,18 @@ class SettingsPage(ctk.CTkFrame):
                      font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
                      text_color=C_DIM).pack(anchor="w", padx=12, pady=(10, 6))
 
+        # Tip seçici: Uniform (eşit parçalar) / Multi (farklı boyutlar) / Single
+        mode_var = StringVar(value="Uniform (eşit parçalar)")
+        mode_map = {"Uniform (eşit parçalar)": "uniform",
+                    "Multi (farklı boyutlu parçalar)": "multi",
+                    "Single (tek parça)": "single"}
+        ctk.CTkOptionMenu(
+            new_card, values=list(mode_map), variable=mode_var,
+            fg_color=C_BG4, button_color=C_ACCENT, button_hover_color=C_ACC_LT,
+            dropdown_fg_color=C_BG3, dropdown_hover_color=C_BG4,
+            text_color=C_TEXT, command=lambda _v: sync_mode_fields()
+        ).pack(fill="x", padx=10, pady=(0, 6))
+
         new_fields = {}
         row = ctk.CTkFrame(new_card, fg_color="transparent")
         row.pack(fill="x", padx=10, pady=(0, 4))
@@ -505,25 +517,70 @@ class SettingsPage(ctk.CTkFrame):
             e.pack(fill="x", pady=(2, 0))
             new_fields[key] = e
 
+        # Multi mod: "506x800, 100x800" formatında parça listesi
+        multi_frame = ctk.CTkFrame(new_card, fg_color="transparent")
+        ctk.CTkLabel(multi_frame, text="Parçalar — GENİŞLIKxYÜKSEKLİK, virgülle (ör. 506x800, 100x800)",
+                     font=ctk.CTkFont("Segoe UI", 9),
+                     text_color=C_DIM).pack(anchor="w")
+        multi_entry = ctk.CTkEntry(multi_frame, fg_color=C_BG4, border_color=C_BORDER,
+                                   text_color=C_TEXT, height=30,
+                                   placeholder_text="506x800, 100x800")
+        multi_entry.pack(fill="x", pady=(2, 0))
+
+        def sync_mode_fields():
+            mode = mode_map[mode_var.get()]
+            if mode == "multi":
+                row.pack_forget()
+                if not multi_frame.winfo_manager():
+                    multi_frame.pack(fill="x", padx=10, pady=(0, 4), before=add_btn)
+            else:
+                multi_frame.pack_forget()
+                if not row.winfo_manager():
+                    row.pack(fill="x", padx=10, pady=(0, 4), before=add_btn)
+                # single'da parça sayısı alanı anlamsız
+                new_fields["n"].configure(state="disabled" if mode == "single" else "normal")
+
+        def parse_multi_parts(text):
+            parts = []
+            for chunk in text.split(","):
+                chunk = chunk.strip().lower().replace("×", "x")
+                if not chunk:
+                    continue
+                w_str, _, h_str = chunk.partition("x")
+                parts.append({"width": int(w_str), "height": int(h_str)})
+            return parts
+
         def create_template():
+            mode = mode_map[mode_var.get()]
             try:
-                pw = int(new_fields["w"].get())
-                ph = int(new_fields["h"].get())
-                cnt = int(new_fields["n"].get())
-                if pw <= 0 or ph <= 0 or cnt <= 0:
-                    raise ValueError
+                if mode == "multi":
+                    parts = parse_multi_parts(multi_entry.get())
+                    if not parts or any(p["width"] <= 0 or p["height"] <= 0 for p in parts):
+                        raise ValueError
+                    widths = "+".join(str(p["width"]) for p in parts)
+                    tmpl = {"name": f"Özel Multi ({widths})", "mode": "multi",
+                            "parts": parts, "patch": False, "prefix": "cus"}
+                else:
+                    pw = int(new_fields["w"].get())
+                    ph = int(new_fields["h"].get())
+                    if pw <= 0 or ph <= 0:
+                        raise ValueError
+                    if mode == "single":
+                        tmpl = {"name": f"Özel Tek ({pw}×{ph})", "mode": "single",
+                                "width": pw, "height": ph, "patch": False, "prefix": "cus"}
+                    else:
+                        cnt = int(new_fields["n"].get())
+                        if cnt <= 0:
+                            raise ValueError
+                        tmpl = {"name": f"Özel ({pw}×{ph} ×{cnt})", "mode": "uniform",
+                                "width": pw * cnt, "height": ph, "parts": cnt,
+                                "patch": False, "prefix": "cus"}
             except ValueError:
-                self.app._status.error("Geçerli pozitif sayı gir")
+                self.app._status.error("Geçerli değerler gir (multi için: 506x800, 100x800 gibi)")
                 return
-            tmpl = {
-                "name": f"Özel ({pw}×{ph} ×{cnt})",
-                "mode": "uniform",
-                "width": pw * cnt,
-                "height": ph,
-                "parts": cnt,
-                "patch": False,
-                "prefix": "cus",
-            }
+            if any(t["name"] == tmpl["name"] for t in TEMPLATES):
+                self.app._status.error("Aynı isimde şablon zaten var")
+                return
             TEMPLATES.append(tmpl)
             self.app.template = tmpl
             save_custom_presets()
@@ -531,9 +588,10 @@ class SettingsPage(ctk.CTkFrame):
             self.app._status.set(f"Şablon eklendi: {tmpl['name']}", C_SUCCESS, C_SUCCESS)
             self.open_tab("Şablonlar")
 
-        AnimButton(new_card, text="＋  Ekle",
-                   variant="accent", height=32, text_color=C_BG0,
-                   command=create_template).pack(fill="x", padx=10, pady=(6, 10))
+        add_btn = AnimButton(new_card, text="＋  Ekle",
+                             variant="accent", height=32, text_color=C_BG0,
+                             command=create_template)
+        add_btn.pack(fill="x", padx=10, pady=(6, 10))
 
         # Mevcut şablonları yönet
         ctk.CTkLabel(p, text="ŞABLONU YÖNET",
@@ -576,7 +634,12 @@ class SettingsPage(ctk.CTkFrame):
             t = current_template()
             if not t:
                 return
-            is_uniform = t.get("mode") == "uniform"
+            mode = t.get("mode", "uniform")
+            is_uniform = mode == "uniform"
+            # uniform ve single alan bazında düzenlenebilir; multi'nin parça
+            # listesi bu forma sığmaz — sil + yeniden oluştur.
+            editable = (t.get("prefix") not in ("work", "art", "shot")
+                        and mode in ("uniform", "single"))
             for key, entry in fields.items():
                 entry.configure(state="normal")
                 entry.delete(0, "end")
@@ -586,9 +649,9 @@ class SettingsPage(ctk.CTkFrame):
             fields["parts"].insert(0, str(t.get("parts", "")) if is_uniform else "")
             fields["prefix"].insert(0, t.get("prefix", ""))
             patch_var.set(bool(t.get("patch", False)))
-            state = "normal" if t.get("prefix") not in ("work", "art", "shot") and is_uniform else "disabled"
-            for entry in fields.values():
-                entry.configure(state=state)
+            state = "normal" if editable else "disabled"
+            for key, entry in fields.items():
+                entry.configure(state="disabled" if (key == "parts" and not is_uniform) else state)
 
         menu.configure(command=fill)
         fill()
@@ -605,24 +668,29 @@ class SettingsPage(ctk.CTkFrame):
 
         def save_edit():
             t = current_template()
-            if not t or t.get("prefix") in ("work", "art", "shot") or t.get("mode") != "uniform":
-                self.app._status.error("Sadece özel uniform şablonlar düzenlenebilir")
+            mode = (t or {}).get("mode", "uniform")
+            if not t or t.get("prefix") in ("work", "art", "shot"):
+                self.app._status.error("Yerleşik şablonlar düzenlenemez")
+                return
+            if mode == "multi":
+                self.app._status.error("Multi şablonu düzenlemek için silip yeniden oluştur")
                 return
             try:
                 name = fields["name"].get().strip()
                 width = int(fields["width"].get())
                 height = int(fields["height"].get())
-                parts = int(fields["parts"].get())
+                parts = int(fields["parts"].get()) if mode == "uniform" else 0
                 prefix = fields["prefix"].get().strip() or "cus"
-                if not name or width <= 0 or height <= 0 or parts <= 0:
+                if not name or width <= 0 or height <= 0 or (mode == "uniform" and parts <= 0):
                     raise ValueError
             except ValueError:
                 self.app._status.error("Şablon değerleri geçersiz")
                 return
-            t.update({
-                "name": name, "width": width, "height": height,
-                "parts": parts, "patch": bool(patch_var.get()), "prefix": prefix,
-            })
+            updates = {"name": name, "width": width, "height": height,
+                       "patch": bool(patch_var.get()), "prefix": prefix}
+            if mode == "uniform":
+                updates["parts"] = parts
+            t.update(updates)
             save_custom_presets()
             self.app.template = t
             self.app._rebuild_template_cards()

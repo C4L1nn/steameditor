@@ -116,6 +116,62 @@ def test_load_and_save_custom_preset_roundtrip():
     assert len(config.TEMPLATES) == before
 
 
+def test_custom_preset_multi_mode_roundtrip():
+    before = len(config.TEMPLATES)
+    unique_name = "TestMulti__pytest_only"
+    tmpl = {"name": unique_name, "mode": "multi",
+            "parts": [{"width": 506, "height": 800}, {"width": 100, "height": 800}],
+            "patch": False, "prefix": "cus"}
+    config.TEMPLATES.append(tmpl)
+    try:
+        config.save_custom_presets()
+        config.TEMPLATES.remove(tmpl)
+        config.load_custom_presets()
+        loaded = next(t for t in config.TEMPLATES if t["name"] == unique_name)
+        assert loaded["mode"] == "multi"
+        assert loaded["parts"] == [{"width": 506, "height": 800}, {"width": 100, "height": 800}]
+    finally:
+        config.TEMPLATES[:] = [t for t in config.TEMPLATES if t["name"] != unique_name]
+    assert len(config.TEMPLATES) == before
+
+
+def test_custom_preset_single_mode_roundtrip():
+    before = len(config.TEMPLATES)
+    unique_name = "TestSingle__pytest_only"
+    tmpl = {"name": unique_name, "mode": "single", "width": 650, "height": 850,
+            "patch": True, "prefix": "cus"}
+    config.TEMPLATES.append(tmpl)
+    try:
+        config.save_custom_presets()
+        config.TEMPLATES.remove(tmpl)
+        config.load_custom_presets()
+        loaded = next(t for t in config.TEMPLATES if t["name"] == unique_name)
+        assert loaded["mode"] == "single"
+        assert loaded["width"] == 650 and loaded["height"] == 850
+        assert loaded["patch"] is True
+    finally:
+        config.TEMPLATES[:] = [t for t in config.TEMPLATES if t["name"] != unique_name]
+    assert len(config.TEMPLATES) == before
+
+
+def test_custom_preset_legacy_entry_without_mode_stays_uniform():
+    """Eski dosyalarda 'mode' alanı yok — uniform olarak yüklenmeli (geriye uyum)."""
+    before = len(config.TEMPLATES)
+    unique_name = "TestLegacy__pytest_only"
+    with open(config._PRESETS_FILE, "w", encoding="utf-8") as f:
+        json.dump([{"name": unique_name, "width": 750, "height": 1250,
+                    "parts": 5, "last_byte": 33, "prefix": "cus"}], f)
+    try:
+        config.load_custom_presets()
+        loaded = next(t for t in config.TEMPLATES if t["name"] == unique_name)
+        assert loaded["mode"] == "uniform"
+        assert loaded["parts"] == 5
+        assert loaded["patch"] is True
+    finally:
+        config.TEMPLATES[:] = [t for t in config.TEMPLATES if t["name"] != unique_name]
+    assert len(config.TEMPLATES) == before
+
+
 # ── manifest / snippet yardımcıları ────────────────────────
 
 def test_get_template_console_snippet_uniform():
