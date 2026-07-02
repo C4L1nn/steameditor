@@ -283,6 +283,40 @@ def clear_history():
         _log.error(f"[HISTORY CLEAR ERR] {e}")
 
 
+_RECOVERY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_recovery.json")
+
+
+def save_recovery(state: dict):
+    """Çalışma durumu anlık görüntüsünü yazar (kilitlenme kurtarması için).
+    Temiz kapanışta clear_recovery çağrılır; dosyanın açılışta VAR olması
+    'son oturum düzgün kapanmadı' demektir."""
+    try:
+        with open(_RECOVERY_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        _log.error(f"[RECOVERY SAVE ERR] {e}")
+
+
+def load_recovery() -> dict | None:
+    if not os.path.exists(_RECOVERY_FILE):
+        return None
+    try:
+        with open(_RECOVERY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        _log.error(f"[RECOVERY LOAD ERR] {e}")
+        return None
+
+
+def clear_recovery():
+    try:
+        if os.path.exists(_RECOVERY_FILE):
+            os.remove(_RECOVERY_FILE)
+    except Exception as e:
+        _log.error(f"[RECOVERY CLEAR ERR] {e}")
+
+
 def load_config() -> dict:
     """steam_splitter_config.json'u dict olarak döner."""
     defaults = {

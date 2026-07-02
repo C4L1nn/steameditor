@@ -79,6 +79,9 @@ from config import (
     _PRESETS_FILE,
     _masked_key,
     append_history,
+    clear_recovery,
+    load_recovery,
+    save_recovery,
     build_steam_upload_manifest,
     fetch_steam_published_file_details,
     get_template_console_snippet,
@@ -969,10 +972,18 @@ class App(ctk.CTk):
         self.bind("<Control-Return>", lambda _e: self._split_single())
         self.bind("<Escape>", self._on_escape)
 
+        # Kilitlenme kurtarma: temiz kapanışta dosya silinir; açılışta hâlâ
+        # duruyorsa son oturum çökmüş demektir -> devam etmek iste.
+        self._last_recovery_state = None
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.after(30000, self._recovery_tick)
+
         if preload_path and os.path.isfile(preload_path):
             # Pencere tam çizilmeden önizleme boyutlandırması yanlış çıkmasın diye
             # mainloop başladıktan sonraya ertele.
             self.after(200, lambda: self._on_file_drop(preload_path))
+        else:
+            self.after(400, self._offer_recovery)
 
     # ──────────────────────────────────────────────────────
     def _build(self):
@@ -999,6 +1010,69 @@ class App(ctk.CTk):
     def _close_settings_page(self):
         self._settings_page.grid_remove()
         self._main.grid()
+
+    # ── Kilitlenme kurtarma ───────────────────────────────
+    def _recovery_snapshot(self) -> dict | None:
+        """Kurtarılmaya değer bir çalışma durumu varsa sözlük döner."""
+        if not self.current_path and not self._batch_files:
+            return None
+        state = {"template_name": self.template.get("name"),
+                 "timestamp": time.time()}
+        if self._batch_files:
+            state["input_paths"] = list(self._batch_files)
+        elif os.path.isdir(self.current_path):
+            state["input_dir"] = self.current_path
+        else:
+            state["input_paths"] = [self.current_path]
+        return state
+
+    def _recovery_tick(self):
+        try:
+            state = self._recovery_snapshot()
+            if state is not None:
+                # timestamp hariç değişiklik yoksa diske yazma
+                comparable = {k: v for k, v in state.items() if k != "timestamp"}
+                if comparable != self._last_recovery_state:
+                    save_recovery(state)
+                    self._last_recovery_state = comparable
+        except Exception as e:
+            _log.error(f"[RECOVERY TICK ERR] {e}")
+        self.after(30000, self._recovery_tick)
+
+    def _offer_recovery(self):
+        state = load_recovery()
+        if not state:
+            return
+        paths = state.get("input_paths") or []
+        input_dir = state.get("input_dir", "")
+        valid_paths = [p for p in paths if os.path.isfile(p)]
+        if not valid_paths and not (input_dir and os.path.isdir(input_dir)):
+            clear_recovery()
+            return
+        desc = (os.path.basename(input_dir) + " (klasör)") if input_dir else (
+            os.path.basename(valid_paths[0]) + (f" +{len(valid_paths) - 1} dosya" if len(valid_paths) > 1 else ""))
+        if not messagebox.askyesno(
+                "Kaldığın Yerden Devam",
+                f"Son oturum düzgün kapanmamış görünüyor.\n\n"
+                f"Üzerinde çalıştığın iş geri yüklensin mi?\n• {desc}"):
+            clear_recovery()
+            return
+        tmpl = next((t for t in TEMPLATES if t["name"] == state.get("template_name")), None)
+        if tmpl:
+            self.template = tmpl
+            self._sync_cards()
+            self._status.set_right(tmpl["name"])
+        if input_dir and os.path.isdir(input_dir):
+            self._on_file_drop(input_dir)
+        elif len(valid_paths) > 1:
+            self._on_batch_drop(valid_paths)
+        else:
+            self._on_file_drop(valid_paths[0])
+        self._status.ok("Çalışma geri yüklendi ✓")
+
+    def _on_close(self):
+        clear_recovery()  # temiz kapanış — kurtarmaya gerek yok
+        self.destroy()
 
     def _on_escape(self, _=None):
         """Esc: ayarlar sayfası açıksa ona, değilse split önizlemeden drop'a dön.

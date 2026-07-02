@@ -15,6 +15,7 @@ def isolated_files(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "_PROFILES_FILE", str(tmp_path / "profiles.json"))
     monkeypatch.setattr(config, "_PROJECTS_FILE", str(tmp_path / "projects.json"))
     monkeypatch.setattr(config, "_HISTORY_FILE", str(tmp_path / "history.json"))
+    monkeypatch.setattr(config, "_RECOVERY_FILE", str(tmp_path / "recovery.json"))
     yield
 
 
@@ -339,3 +340,24 @@ def test_clear_history_removes_file():
                            "files": 1, "completed": 1, "state": "done"})
     config.clear_history()
     assert config.load_history() == []
+
+
+# ── kilitlenme kurtarma ─────────────────────────────────────
+
+def test_recovery_none_when_file_missing():
+    assert config.load_recovery() is None
+
+
+def test_recovery_save_load_clear_roundtrip():
+    state = {"template_name": "Steam 150x1250 (5)",
+             "input_paths": [r"C:\x\a.png"], "timestamp": 123.0}
+    config.save_recovery(state)
+    assert config.load_recovery() == state
+    config.clear_recovery()
+    assert config.load_recovery() is None
+
+
+def test_recovery_survives_corrupt_json():
+    with open(config._RECOVERY_FILE, "w", encoding="utf-8") as f:
+        f.write("{bozuk")
+    assert config.load_recovery() is None

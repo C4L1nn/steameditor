@@ -25,3 +25,4 @@ Thumbs.db
 # Log dosyaları
 steam_splitter.log*
 steam_splitter_history.json
+steam_splitter_recovery.json
