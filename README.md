@@ -1,7 +1,9 @@
-# Steam Splitter PRO
+# SplitForge — Steam Showcase Studio
 
 Steam Workshop / vitrin görselleri için görsel **bölme** + **Steam Community upload otomasyonu**
 masaüstü aracı. customtkinter ile yazılmış koyu temalı bir GUI.
+
+> İkon `make_icon.py` ile üretilir (`python make_icon.py` → `app_icon.ico` + `app_icon.png`).
 
 ## Ne işe yarar?
 

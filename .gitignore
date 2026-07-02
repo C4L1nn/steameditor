@@ -8,6 +8,7 @@ venv/
 
 # Uygulama çıktıları / geçici
 output/
+deneme/
 *.status.json
 steam_upload_manifest.json
 

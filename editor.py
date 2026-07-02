@@ -1016,10 +1016,11 @@ class App(ctk.CTk):
                 self._dnd_ok = True
             except Exception as e:
                 _log.warning(f"[DND] tkdnd yüklenemedi, sürükle-bırak devre dışı: {e}")
-        self.title("Steam Splitter PRO")
+        self.title("SplitForge — Steam Showcase Studio")
         self.geometry("1340x840")
         self.minsize(1040, 700)
         self.configure(fg_color=C_BG1)
+        self._apply_app_icon()
 
         self.current_path = None
         self._batch_files = None         # çoklu seçim: belirli dosya listesi (klasörden ayrı)
@@ -1061,6 +1062,25 @@ class App(ctk.CTk):
             self.after(200, lambda: self._on_file_drop(preload_path))
         else:
             self.after(400, self._offer_recovery)
+
+    def _apply_app_icon(self):
+        """Pencere/görev çubuğu ikonunu (app_icon.ico) ve sidebar logosunu
+        (app_icon.png) ayarlar. Dosya yoksa sessizce ✂ glifine düşer."""
+        root = os.path.dirname(os.path.abspath(__file__))
+        ico = os.path.join(root, "app_icon.ico")
+        png = os.path.join(root, "app_icon.png")
+        if os.path.isfile(ico):
+            try:
+                self.iconbitmap(ico)
+            except Exception:
+                pass
+        if os.path.isfile(png):
+            try:
+                self._icon_photo = ImageTk.PhotoImage(Image.open(png))
+                self.iconphoto(True, self._icon_photo)
+                self._logo_img = make_ctk_image(Image.open(png).resize((34, 34), Image.LANCZOS))
+            except Exception:
+                self._logo_img = None
 
     # ──────────────────────────────────────────────────────
     def _build(self):
@@ -1188,18 +1208,22 @@ class App(ctk.CTk):
         sb.grid_columnconfigure(0, weight=1)
         sb.grid_rowconfigure(1, weight=1)  # kaydırılabilir gövde tüm boşluğu alır
 
-        # Logo — sabit, kaymaz
+        # Logo — sabit, kaymaz. Uygulama ikonu varsa onu, yoksa ✂ glifini göster.
         logo_f = ctk.CTkFrame(sb, fg_color="transparent")
         logo_f.grid(row=0, column=0, sticky="ew", padx=18, pady=(20, 4))
-        ctk.CTkLabel(logo_f, text="⚡",
-                     font=ctk.CTkFont("Segoe UI Emoji", 26),
-                     text_color=C_ACCENT).pack(side="left")
+        logo_img = getattr(self, "_logo_img", None)
+        if logo_img is not None:
+            ctk.CTkLabel(logo_f, text="", image=logo_img).pack(side="left")
+        else:
+            ctk.CTkLabel(logo_f, text="✂",
+                         font=ctk.CTkFont("Segoe UI Symbol", 26),
+                         text_color=C_ACCENT).pack(side="left")
         name_f = ctk.CTkFrame(logo_f, fg_color="transparent")
-        name_f.pack(side="left", padx=6)
-        ctk.CTkLabel(name_f, text="Steam Splitter",
-                     font=ctk.CTkFont("Segoe UI", 15, weight="bold"),
+        name_f.pack(side="left", padx=8)
+        ctk.CTkLabel(name_f, text="SplitForge",
+                     font=ctk.CTkFont("Segoe UI", 16, weight="bold"),
                      text_color=C_TEXT).pack(anchor="w")
-        ctk.CTkLabel(name_f, text="PRO  v2.0",
+        ctk.CTkLabel(name_f, text="Steam Showcase Studio",
                      font=ctk.CTkFont("Segoe UI", 9),
                      text_color=C_DIM).pack(anchor="w")
 
