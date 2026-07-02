@@ -62,6 +62,7 @@ from core import (
     render_showcase_preview,
     render_template_preview,
     resize_cover,
+    save_output_piece,
     split_gif_frames,
     template_output_summary,
 )
@@ -110,7 +111,8 @@ F12_ARMED = False  # tek seferlik F12 tetikçisi
 
 def manual_crop_with_template(master, img_path: str, outdir: str, template: dict,
                               cfg: dict | None = None, band_count: int = 1,
-                              preset_origin: tuple[int, int] | None = None):
+                              preset_origin: tuple[int, int] | None = None,
+                              region_scale: float = 1.0):
     """
     Manuel crop modu:
     - Kullanıcı sadece İLK bandın İLK parçasının alanını (başlangıç
@@ -160,6 +162,37 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
     first = parts_info[0]
     tw = first["width"]
     th = first["height"]
+    if preset_origin is not None and mode == "uniform":
+        # İnteraktif grid yolu: seçilen bölge (region_scale ile büyütülmüş/
+        # küçültülmüş olabilir) TEK seferde kırpılır, şablonun gerçek
+        # boyutuna ölçeklenir ve dilimlere ayrılır. rs=1.0'da resize no-op.
+        rs = max(0.05, float(region_scale))
+        tw_total = template["width"]
+        bands_eff = max(1, band_count)
+        gw = int(round(tw_total * rs))
+        gh = int(round(band_h * bands_eff * rs))
+        bx = max(0, min(img_w - gw, int(preset_origin[0])))
+        by = max(0, min(img_h - gh, int(preset_origin[1])))
+        region = img.crop((bx, by, bx + gw, by + gh))
+        target_size = (tw_total, band_h * bands_eff)
+        if region.size != target_size:
+            region = region.resize(target_size, Image.LANCZOS)
+
+        created = []
+        slice_w = tw_total // len(parts_info)
+        idx = 1
+        for band in range(bands_eff):
+            y1 = band * band_h
+            for i in range(len(parts_info)):
+                x1 = i * slice_w
+                x2 = tw_total if i == len(parts_info) - 1 else (i + 1) * slice_w
+                piece = region.crop((x1, y1, x2, y1 + band_h))
+                full = save_output_piece(piece, outdir, f"{prefix}_{base}_{idx:02}",
+                                         cfg, bool(template.get("patch")))
+                created.append(full)
+                idx += 1
+        return created
+
     if preset_origin is not None:
         base_x = max(0, min(img_w - tw, int(preset_origin[0])))
         base_y = max(0, min(img_h - th, int(preset_origin[1])))
@@ -206,13 +239,8 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
             py2 = py1 + ph
 
             piece = img.crop((px1, py1, px2, py2))
-            fname = f"{prefix}_{base}_{idx:02}.png"
-            full = os.path.join(outdir, fname)
-            piece.save(full)
-
-            if template.get("patch"):
-                patch_png_last_byte(full)
-
+            full = save_output_piece(piece, outdir, f"{prefix}_{base}_{idx:02}",
+                                     cfg, bool(template.get("patch")))
             created.append(full)
             idx += 1
             cur_x += pw  # sonraki parçayı sağa kaydır
@@ -966,6 +994,7 @@ class App(ctk.CTk):
         self.current_path = None
         self._batch_files = None         # çoklu seçim: belirli dosya listesi (klasörden ayrı)
         self._grid_pos = None            # sürüklenebilir bölme grid'inin konumu (orijinal px)
+        self._grid_scale = 1.0           # grid bölge ölçeği (köşeden büyüt/küçült)
         self._pv = None                  # interaktif önizleme cache'i (ölçekli taban vs.)
         self._last_outputs = []
         self._splitting = False          # async bölme sırasında tekrar tetiklemeyi engelle
@@ -1431,6 +1460,7 @@ class App(ctk.CTk):
     def _on_file_drop(self, path):
         self._batch_files = None
         self._grid_pos = None  # yeni dosyada grid varsayılan konuma (ortaya) döner
+        self._grid_scale = 1.0
         # Sürüklenen/seçilen yol klasörse toplu giriş gibi davran
         if os.path.isdir(path):
             self.current_path = path
@@ -1490,7 +1520,7 @@ class App(ctk.CTk):
         except Exception as e:
             self._status.error(f"Önizleme hatası: {e}")
 
-    # ── İnteraktif önizleme (sürüklenebilir bölme grid'i) ──
+    # ── İnteraktif önizleme (sürüklenebilir/boyutlanabilir bölme grid'i) ──
     def _setup_interactive_preview(self, img):
         """Efektli tam görselden ölçekli bir taban cache'ler; grid overlay'i
         her sürüklemede sadece bu tabana yeniden çizilir (hızlı)."""
@@ -1500,26 +1530,35 @@ class App(ctk.CTk):
         img = _apply_effects_pipeline(img, self._cfg)
         W, H = img.size
 
-        bands_fit = max(1, min(self._current_band_count(), H // th))
-        gw, gh = tw_total, th * bands_fit
-        if self._grid_pos is None:
-            gx, gy = (W - gw) // 2, max(0, (H - gh) // 2)  # varsayılan: ortala
-        else:
-            gx, gy = self._grid_pos
-        gx = max(0, min(W - gw, int(gx)))
-        gy = max(0, min(H - gh, int(gy)))
-        self._grid_pos = (gx, gy)
+        # Grid ölçeği kaynağa sığacak şekilde kısıtlanır (en az 1 bant)
+        gscale = max(0.3, min(self._grid_scale, W / tw_total, H / th))
+        bands_fit = max(1, min(self._current_band_count(), int(H // (th * gscale))))
 
         disp_w = max(self._drop.winfo_width(), 700) - 24
         disp_h = max(self._drop.winfo_height(), 480) - 24
         disp = img.convert("RGB")
         disp.thumbnail((max(1, disp_w), max(1, disp_h)), Image.LANCZOS)
 
+        self._grid_scale = gscale
         self._pv = {"img_size": (W, H), "disp": disp, "scale": disp.width / W,
                     "parts": parts, "band_h": th, "bands": bands_fit,
-                    "slice_w": tw_total // parts, "tw_total": tw_total,
-                    "grid": (gw, gh)}
+                    "slice_w": tw_total // parts, "tw_total": tw_total}
+        self._apply_grid_geometry()
         self._draw_grid_overlay()
+
+    def _apply_grid_geometry(self):
+        """Ölçekten grid boyutunu türetir, konumu kaynağa göre kıskaçlar."""
+        pv = self._pv
+        W, H = pv["img_size"]
+        gscale = self._grid_scale
+        gw = int(round(pv["tw_total"] * gscale))
+        gh = int(round(pv["band_h"] * pv["bands"] * gscale))
+        pv["grid"] = (gw, gh)
+        if self._grid_pos is None:
+            gx, gy = (W - gw) // 2, max(0, (H - gh) // 2)  # varsayılan: ortala
+        else:
+            gx, gy = self._grid_pos
+        self._grid_pos = (max(0, min(W - gw, int(gx))), max(0, min(H - gh, int(gy))))
 
     def _draw_grid_overlay(self):
         pv = self._pv
@@ -1528,34 +1567,70 @@ class App(ctk.CTk):
         base = pv["disp"].copy()
         d = ImageDraw.Draw(base, "RGBA")
         s = pv["scale"]
+        gscale = self._grid_scale
         gx, gy = self._grid_pos
-        sw, parts, th = pv["slice_w"], pv["parts"], pv["band_h"]
+        gw, gh = pv["grid"]
+        parts, th = pv["parts"], pv["band_h"]
+        sw_g = pv["slice_w"] * gscale   # grid içi dilim genişliği (orijinal px)
+        th_g = th * gscale
         for b in range(pv["bands"]):
-            y1 = gy + b * th
+            y1 = gy + b * th_g
             for i in range(parts):
-                x1 = gx + i * sw
-                x2 = gx + (pv["tw_total"] if i == parts - 1 else (i + 1) * sw)
+                x1 = gx + i * sw_g
+                x2 = gx + (gw if i == parts - 1 else (i + 1) * sw_g)
                 fill = (249, 115, 22, 26) if (b * parts + i) % 2 == 0 else (99, 102, 241, 22)
-                d.rectangle((x1 * s, y1 * s, x2 * s, (y1 + th) * s),
+                d.rectangle((x1 * s, y1 * s, x2 * s, (y1 + th_g) * s),
                             fill=fill, outline=(249, 115, 22, 255), width=2)
+        # Sağ-alt köşe boyutlandırma tutamacı
+        cx, cy = (gx + gw) * s, (gy + gh) * s
+        d.rectangle((cx - 7, cy - 7, cx + 7, cy + 7),
+                    fill=(249, 115, 22, 255), outline=(8, 8, 8, 255), width=2)
+
         W, H = pv["img_size"]
         patch = " · patch açık" if self.template.get("patch") else ""
-        info = (f"{pv['bands'] * parts} parça ({pv['bands']} bant) · konum {gx},{gy} · "
-                f"parça {sw}×{th}px · kaynak {W}×{H}px{patch} · 🖱 grid'i sürükle")
+        scale_txt = "" if abs(gscale - 1.0) < 0.01 else f" · seçim %{round(gscale * 100)} → ölçeklenir"
+        info = (f"{pv['bands'] * parts} parça ({pv['bands']} bant) · konum {gx},{gy}"
+                f"{scale_txt} · parça {pv['slice_w']}×{th}px · kaynak {W}×{H}px{patch}"
+                f" · 🖱 sürükle / köşeden boyutlandır")
         batch_count = len(self._batch_files) if self._batch_files else 0
         self._drop.show_image(base, info, batch_count=batch_count)
 
     def _grid_press(self, e):
-        if self._pv:
-            self._pv["press"] = (e.x, e.y, *self._grid_pos)
+        pv = self._pv
+        if not pv:
+            return
+        s = pv["scale"]
+        gx, gy = self._grid_pos
+        gw, gh = pv["grid"]
+        cx, cy = (gx + gw) * s, (gy + gh) * s
+        if abs(e.x - cx) <= 12 and abs(e.y - cy) <= 12:
+            # köşe tutamacı: boyutlandırma (delta tabanlı, DPI'dan bağımsız)
+            pv["press"] = ("resize", e.x, e.y, self._grid_scale, max(1.0, gw * s))
+        else:
+            pv["press"] = ("move", e.x, e.y, gx, gy)
 
     def _grid_drag(self, e):
         pv = self._pv
         if not pv or "press" not in pv:
             return
-        px, py, ox, oy = pv["press"]
-        s = pv["scale"] or 1.0
+        mode = pv["press"][0]
         W, H = pv["img_size"]
+        if mode == "resize":
+            _, px, py, scale0, gw_disp0 = pv["press"]
+            new_scale = scale0 * (1 + (e.x - px) / gw_disp0)
+            # kaynağa sığsın: konum sabit, köşe içeride kalmalı
+            gx, gy = self._grid_pos
+            max_scale = min((W - gx) / pv["tw_total"],
+                            (H - gy) / (pv["band_h"] * pv["bands"]))
+            new_scale = max(0.3, min(new_scale, max_scale))
+            if abs(new_scale - self._grid_scale) < 0.003:
+                return
+            self._grid_scale = new_scale
+            self._apply_grid_geometry()
+            self._draw_grid_overlay()
+            return
+        _, px, py, ox, oy = pv["press"]
+        s = pv["scale"] or 1.0
         gw, gh = pv["grid"]
         gx = int(max(0, min(W - gw, ox + (e.x - px) / s)))
         gy = int(max(0, min(H - gh, oy + (e.y - py) / s)))
@@ -1619,6 +1694,7 @@ class App(ctk.CTk):
         # için worker thread'de güvenle çalışır.
         grid_origin = self._grid_pos if self._pv else None
         grid_bands = self._pv["bands"] if self._pv else 1
+        grid_scale = self._grid_scale if self._pv else 1.0
         self._splitting = True
         self._status.busy("Bölünüyor...")
 
@@ -1627,7 +1703,8 @@ class App(ctk.CTk):
                 if grid_origin is not None:
                     created = manual_crop_with_template(
                         self, path, outdir, template, cfg,
-                        band_count=grid_bands, preset_origin=grid_origin)
+                        band_count=grid_bands, preset_origin=grid_origin,
+                        region_scale=grid_scale)
                 else:
                     created = process_image(path, outdir, template, cfg)
                 self.after(0, lambda: self._on_split_done(created))
