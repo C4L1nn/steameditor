@@ -438,6 +438,23 @@ class SettingsPage(ctk.CTkFrame):
 
         self._sep_line(p)
 
+        # ── Ön İşleme (Autocrop) ──
+        ctk.CTkLabel(p, text="ÖN İŞLEME", font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
+                     text_color=C_DIM).pack(anchor="w", padx=4, pady=(0, 6))
+        autocrop_var = BooleanVar(value=bool(cfg.get("autocrop_enabled", False)))
+        ctk.CTkCheckBox(
+            p, text="Kenar boşluğunu otomatik kırp (şeffaf/tek renk çerçeve)",
+            variable=autocrop_var, font=ctk.CTkFont("Segoe UI", 11),
+            text_color=C_TEXT, fg_color=C_ACCENT, hover_color=C_ACC_LT,
+            checkmark_color=C_BG0,
+        ).pack(anchor="w", padx=4, pady=(0, 4))
+        ctk.CTkLabel(p, text="Bölmeden önce görselin etrafındaki boş alan atılır "
+                             "(ezgif'teki 'trim transparent pixels' gibi).",
+                     font=ctk.CTkFont("Segoe UI", 10), text_color=C_DIM,
+                     wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 8))
+
+        self._sep_line(p)
+
         # ── Otomatik İyileştir ──
         ctk.CTkLabel(p, text="OTOMATİK İYİLEŞTİR", font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
                      text_color=C_DIM).pack(anchor="w", padx=4, pady=(0, 6))
@@ -470,6 +487,7 @@ class SettingsPage(ctk.CTkFrame):
             cfg["text_overlay_opacity"] = int(text_opacity_slider.get())
             cfg["auto_enhance_enabled"] = bool(enhance_enabled_var.get())
             cfg["auto_enhance_intensity"] = int(enhance_slider.get())
+            cfg["autocrop_enabled"] = bool(autocrop_var.get())
             save_config(cfg)
             if self.app.current_path and os.path.isfile(self.app.current_path):
                 self.app._load_preview(self.app.current_path)

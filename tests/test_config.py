@@ -249,6 +249,7 @@ def test_profile_keys_cover_border_fx_and_upload_settings():
     # değişeceğini belirler; bunlar yanlışlıkla daralırsa profil sistemi
     # sessizce eksik ayar uygular.
     assert set(config.PROFILE_KEYS) == {
+        "autocrop_enabled",
         "border_fx_enabled", "border_fx_template", "border_fx_color",
         "border_fx_opacity", "border_fx_glow",
         "text_overlay_enabled", "text_overlay_text", "text_overlay_color",

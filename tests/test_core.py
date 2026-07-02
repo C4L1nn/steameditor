@@ -384,6 +384,67 @@ def test_process_image_uniform_patch_sets_last_byte(tmp_path):
         assert data[-1] == 0x21
 
 
+# ── autocrop_borders ───────────────────────────────────────
+
+def test_autocrop_removes_solid_color_border():
+    img = Image.new("RGB", (400, 300), (0, 0, 0))  # siyah çerçeve
+    from PIL import ImageDraw as _ID
+    _ID.Draw(img).rectangle((100, 80, 299, 219), fill=(200, 50, 50))
+    out = core.autocrop_borders(img, {"autocrop_enabled": True})
+    assert out.size == (200, 140)
+
+
+def test_autocrop_removes_transparent_border():
+    img = Image.new("RGBA", (400, 300), (0, 0, 0, 0))
+    from PIL import ImageDraw as _ID
+    _ID.Draw(img).rectangle((50, 60, 349, 239), fill=(10, 200, 10, 255))
+    out = core.autocrop_borders(img, {"autocrop_enabled": True})
+    assert out.size == (300, 180)
+
+
+def test_autocrop_noop_when_disabled():
+    img = Image.new("RGB", (400, 300), (0, 0, 0))
+    out = core.autocrop_borders(img, {"autocrop_enabled": False})
+    assert out.size == (400, 300)
+
+
+def test_autocrop_noop_when_no_border():
+    img = Image.new("RGB", (100, 100))
+    for y in range(100):
+        for x in range(100):
+            img.putpixel((x, y), (x * 2 % 255, y * 2 % 255, 100))
+    out = core.autocrop_borders(img, {"autocrop_enabled": True})
+    assert out.size == (100, 100)
+
+
+def test_autocrop_fully_uniform_image_is_noop():
+    """Tamamen tek renk görselde bbox None döner — patlamamalı, aynen dönmeli."""
+    img = Image.new("RGB", (200, 200), (0, 0, 0))
+    out = core.autocrop_borders(img, {"autocrop_enabled": True})
+    assert out.size == (200, 200)
+
+
+def test_split_gif_autocrop_applies_same_box_to_all_frames(tmp_path):
+    from PIL import ImageDraw as _ID
+    frames = []
+    for i in range(3):
+        f = Image.new("RGB", (200, 200), (0, 0, 0))
+        _ID.Draw(f).rectangle((50, 50, 149, 149), fill=(200, 100 + i * 20, 50))
+        frames.append(f)
+    src = tmp_path / "bordered.gif"
+    frames[0].save(src, save_all=True, append_images=frames[1:],
+                   duration=[80] * 3, loop=0)
+    template = {"name": "t", "mode": "single", "width": 100, "height": 100, "prefix": "t"}
+    created = core.split_gif_frames(str(src), str(tmp_path), template,
+                                    {"autocrop_enabled": True})
+    assert len(created) == 1
+    out = Image.open(created[0])
+    frame_sizes = set()
+    for frame in ImageSequence.Iterator(out):
+        frame_sizes.add(frame.size)
+    assert frame_sizes == {(100, 100)}  # tüm kareler aynı boyut, titreme yok
+
+
 # ── çıktı formatı (save_output_piece) ─────────────────────
 
 def test_process_image_jpg_output_format(tmp_path):

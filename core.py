@@ -8,7 +8,7 @@ import subprocess
 import platform
 import shutil
 
-from PIL import Image, ImageSequence, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageEnhance
+from PIL import Image, ImageSequence, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageEnhance, ImageChops
 
 from applog import get_logger
 
@@ -132,6 +132,38 @@ _BORDER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Border T
 # ==========================================================
 #   Yardımcı: Cover Resize (oranı bozmadan kırpma)
 # ==========================================================
+
+def _autocrop_bbox(img: Image.Image, tolerance: int = 12):
+    """Görselin etrafındaki 'boş' kenarın içindeki gerçek içerik kutusunu döner.
+    Şeffaf kenar varsa alpha kanalından; yoksa sol-üst köşe rengi arka plan
+    kabul edilip ondan tolerance kadar sapan pikseller içerik sayılır."""
+    rgba = img.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    if alpha.getextrema()[0] < 250:
+        return alpha.point(lambda a: 255 if a > 8 else 0).getbbox()
+    rgb = rgba.convert("RGB")
+    corner = rgb.getpixel((0, 0))
+    bg = Image.new("RGB", rgb.size, corner)
+    diff = ImageChops.difference(rgb, bg).convert("L")
+    return diff.point(lambda p: 255 if p > tolerance else 0).getbbox()
+
+
+def autocrop_borders(img: Image.Image, cfg: dict | None) -> Image.Image:
+    """cfg'de autocrop_enabled açıksa etraftaki şeffaf/tek renk boşluğu kırpar
+    (ezgif'in 'trim transparent pixels' seçeneğinin karşılığı). Tamamen boş
+    (bbox=None) veya zaten sıfır kenarlı görsellerde no-op."""
+    if not cfg or not bool(cfg.get("autocrop_enabled", False)):
+        return img
+    try:
+        bbox = _autocrop_bbox(img)
+        if bbox and bbox != (0, 0, img.width, img.height):
+            _log.info(f"[AUTOCROP] {img.width}x{img.height} -> "
+                      f"{bbox[2]-bbox[0]}x{bbox[3]-bbox[1]}")
+            return img.crop(bbox)
+    except Exception as e:
+        _log.error(f"[AUTOCROP ERR] {e}")
+    return img
+
 
 def save_output_piece(piece: Image.Image, outdir: str, stem: str,
                       cfg: dict | None, patch: bool) -> str:
@@ -539,6 +571,16 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
     if not frames:
         return created_files
 
+    # Autocrop: bbox İLK kareden hesaplanır ve TÜM karelere aynı uygulanır —
+    # kare kare hesaplansaydı içerik hareket ettikçe boyut değişip titrerdi.
+    if cfg and bool(cfg.get("autocrop_enabled", False)):
+        try:
+            bbox = _autocrop_bbox(frames[0])
+            if bbox and bbox != (0, 0, frames[0].width, frames[0].height):
+                frames = [f.crop(bbox) for f in frames]
+        except Exception as e:
+            _log.error(f"[AUTOCROP GIF ERR] {e}")
+
     # GIF optimizasyon gücü ayarlanabilir (Ayarlar > Genel > Çıktı)
     raw_lossy = (cfg or {}).get("gif_lossy", 80)
     raw_colors = (cfg or {}).get("gif_colors", 128)
@@ -630,6 +672,7 @@ def process_image(path: str, outdir: str, template: dict, cfg: dict | None = Non
     mode = template["mode"]
 
     original = Image.open(path).convert("RGBA")
+    original = autocrop_borders(original, cfg)
 
     # -------------------------------
     # MODE: UNIFORM (Workshop 5'li) - SABİT CANVAS (cover-crop)

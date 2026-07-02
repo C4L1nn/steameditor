@@ -50,6 +50,7 @@ from core import (
     _save_animated_gif,
     _template_preview_canvas,
     _apply_effects_pipeline,
+    autocrop_borders,
     find_gifsicle,
     list_border_templates,
     open_folder,
@@ -143,6 +144,7 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
             parts_info = [{"width": template["width"], "height": template["height"]}]
 
     img = Image.open(img_path).convert("RGBA")
+    img = autocrop_borders(img, cfg)
     img = _apply_effects_pipeline(img, cfg)
     img_w, img_h = img.size
 
@@ -1320,6 +1322,7 @@ class App(ctk.CTk):
             img = Image.open(path)
             if hasattr(img, "n_frames") and img.n_frames > 1:
                 img.seek(0)
+            img = autocrop_borders(img.convert("RGBA"), self._cfg)
             bands = self._current_band_count()
             preview = render_template_preview(img, self.template, self._cfg, band_count=bands)
             batch_count = len(self._batch_files) if self._batch_files else 0

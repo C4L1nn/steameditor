@@ -114,6 +114,7 @@ _CONFIG_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_
 _PROFILES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_profiles.json")
 
 PROFILE_KEYS = (
+    "autocrop_enabled",
     "border_fx_enabled", "border_fx_template", "border_fx_color",
     "border_fx_opacity", "border_fx_glow",
     "text_overlay_enabled", "text_overlay_text", "text_overlay_color",
@@ -313,6 +314,7 @@ def load_config() -> dict:
         "auto_enhance_enabled": False,
         "auto_enhance_intensity": 50,
         "multi_band_count": 3,
+        "autocrop_enabled": False,  # bölmeden önce şeffaf/tek renk kenarı kırp
         "output_format": "png",     # png | jpg (jpg'de patch uygulanmaz)
         "jpg_quality": 90,
         "gif_lossy": 80,
