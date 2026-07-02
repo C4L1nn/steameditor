@@ -4,6 +4,7 @@ Genel/Efektler/Şablonlar/Profiller/Projeler/Steam API/Notlar sekmelerinin
 tamamı; App'e self.app üzerinden bağlanır, hiç yeni OS penceresi açmaz.
 """
 import os
+import time
 import webbrowser
 
 import customtkinter as ctk
@@ -24,7 +25,9 @@ from config import (
     TEMPLATES,
     TEMPLATE_SNIPPET_HINTS,
     _masked_key,
+    clear_history,
     fetch_steam_published_file_details,
+    load_history,
     load_profiles,
     load_projects,
     save_config,
@@ -49,6 +52,7 @@ class SettingsPage(ctk.CTkFrame):
         ("Şablonlar", "🧩"),
         ("Profiller", "🗂"),
         ("Projeler", "📁"),
+        ("Geçmiş", "🕘"),
         ("Steam API", "☁"),
         ("Notlar", "📋"),
     ]
@@ -123,6 +127,7 @@ class SettingsPage(ctk.CTkFrame):
             "Şablonlar": self._build_templates,
             "Profiller": self._build_profiles,
             "Projeler": self._build_projects,
+            "Geçmiş": self._build_history,
             "Steam API": self._build_steam_api,
             "Notlar": self._build_notes,
         }[name]
@@ -722,6 +727,68 @@ class SettingsPage(ctk.CTkFrame):
         AnimButton(btns, text="Sil", nc=C_BG3, hc=C_BG4,
                    height=32, text_color=C_ERROR,
                    command=delete_template).pack(fill="x", pady=3)
+
+    # ── Geçmiş ─────────────────────────────────────────────
+    def _build_history(self, p):
+        ctk.CTkLabel(p, text="Upload Geçmişi",
+                     font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
+                     text_color=C_TEXT).pack(anchor="w", padx=4, pady=(4, 6))
+        ctk.CTkLabel(p, text="Her manuel upload ve kuyruk projesi burada kayıtlı — "
+                             "'bunu Steam'e yüklemiş miydim?' sorusunun cevabı.",
+                     font=ctk.CTkFont("Segoe UI", 10), text_color=C_DIM,
+                     wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 12))
+
+        records = load_history()
+        if not records:
+            ctk.CTkLabel(p, text="Henüz upload kaydı yok.",
+                         font=ctk.CTkFont("Segoe UI", 10),
+                         text_color=C_DIM).pack(anchor="w", padx=4, pady=8)
+            return
+
+        def wipe():
+            if not messagebox.askyesno("Geçmişi Temizle",
+                                       f"{len(records)} kayıt silinecek. Emin misin?"):
+                return
+            clear_history()
+            self.app._status.ok("Upload geçmişi temizlendi")
+            self.open_tab("Geçmiş")
+
+        AnimButton(p, text="Geçmişi Temizle", height=30, text_color=C_ERROR,
+                   font=ctk.CTkFont("Segoe UI", 11),
+                   command=wipe).pack(fill="x", padx=2, pady=(0, 10))
+
+        state_style = {
+            "done":   ("✓ tamamlandı", C_SUCCESS),
+            "failed": ("✗ başarısız", C_ERROR),
+            "yarıda": ("⏸ yarıda kaldı", C_ACC_LT),
+        }
+        for rec in reversed(records):  # en yeni üstte
+            row = ctk.CTkFrame(p, fg_color=C_BG3, corner_radius=8)
+            row.pack(fill="x", padx=2, pady=3)
+
+            try:
+                when = time.strftime("%d.%m.%Y %H:%M", time.localtime(float(rec.get("time", 0))))
+            except Exception:
+                when = "?"
+            source = "Kuyruk" if rec.get("source") == "kuyruk" else "Manuel"
+            label = rec.get("label", "?")
+            files = rec.get("files", 0)
+            completed = rec.get("completed", 0)
+            state_text, state_color = state_style.get(
+                rec.get("state", ""), (rec.get("state", "?"), C_DIM))
+
+            left = ctk.CTkFrame(row, fg_color="transparent")
+            left.pack(side="left", fill="x", expand=True, padx=10, pady=6)
+            ctk.CTkLabel(left, text=f"{label}",
+                         font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
+                         text_color=C_TEXT, anchor="w").pack(anchor="w")
+            ctk.CTkLabel(left, text=f"{when} · {source} · {completed}/{files} parça",
+                         font=ctk.CTkFont("Segoe UI", 9),
+                         text_color=C_DIM, anchor="w").pack(anchor="w")
+
+            ctk.CTkLabel(row, text=state_text,
+                         font=ctk.CTkFont("Segoe UI", 10, weight="bold"),
+                         text_color=state_color).pack(side="right", padx=12)
 
     # ── Profiller ──────────────────────────────────────────
     def _build_profiles(self, p):

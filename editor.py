@@ -76,6 +76,7 @@ from config import (
     _CONFIG_FILE,
     _PRESETS_FILE,
     _masked_key,
+    append_history,
     build_steam_upload_manifest,
     fetch_steam_published_file_details,
     get_template_console_snippet,
@@ -1774,8 +1775,46 @@ class App(ctk.CTk):
             self._status.set("Steam Community uploader açıldı", C_SUCCESS, C_SUCCESS)
             self._open_upload_monitor(status_path, files)
             self._refresh_resume_upload_button()
+            self._watch_upload_history(status_path, len(files), f"{len(files)} dosya")
         except Exception as e:
             self._status.error(f"Uploader açılamadı: {e}")
+
+    def _watch_upload_history(self, status_path: str, files_count: int, label: str):
+        """Manuel upload'ın sonucunu geçmişe yazar. Monitor penceresinden
+        bağımsız App-level izleyici — pencere kapatılsa bile süreç bitince
+        (done/failed ya da beklenmedik kapanma) kayıt düşer."""
+        def poll():
+            state, completed = "", 0
+            try:
+                if os.path.exists(status_path):
+                    with open(status_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    state = data.get("state", "")
+                    completed = len(data.get("completed", []))
+            except Exception:
+                pass
+            if state in ("done", "failed") or not self._upload_in_progress():
+                final = state if state in ("done", "failed") else "yarıda"
+                append_history({"time": time.time(), "source": "manuel",
+                                "label": label, "files": files_count,
+                                "completed": completed, "state": final})
+                self._refresh_resume_upload_button()
+                return
+            self.after(2000, poll)
+        self.after(2000, poll)
+
+    def _queue_history(self, name: str, status_path: str, state: str):
+        """Kuyruktaki bir projenin upload sonucunu geçmişe yazar."""
+        completed, total = 0, 0
+        try:
+            with open(status_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            completed = len(data.get("completed", []))
+            total = int(data.get("total", 0) or 0)
+        except Exception:
+            pass
+        append_history({"time": time.time(), "source": "kuyruk", "label": name,
+                        "files": total, "completed": completed, "state": state})
 
     def _cancel_steam_community_upload(self):
         """Çalışan uploader sürecini sonlandırır (tarayıcı + Playwright kapanır)."""
@@ -2037,10 +2076,12 @@ class App(ctk.CTk):
                 state = data.get("state", "running")
                 if state == "done":
                     self._queue_log(f"[{index + 1}/{total}] {name}: upload tamamlandı")
+                    self._queue_history(name, status_path, "done")
                     self.after(300, lambda: self._process_queue_item(entries, index + 1))
                     return
                 if state == "failed":
                     self._queue_log(f"[{index + 1}/{total}] {name}: upload başarısız")
+                    self._queue_history(name, status_path, "failed")
                     self.after(300, lambda: self._process_queue_item(entries, index + 1))
                     return
         except Exception:
@@ -2051,12 +2092,14 @@ class App(ctk.CTk):
         if not self._upload_in_progress():
             self._queue_log(f"[{index + 1}/{total}] {name}: uploader beklenmedik "
                             f"şekilde kapandı, sıradakine geçiliyor")
+            self._queue_history(name, status_path, "yarıda")
             self.after(300, lambda: self._process_queue_item(entries, index + 1))
             return
         if time.monotonic() > deadline:
             self._queue_log(f"[{index + 1}/{total}] {name}: upload 35 dk içinde "
                             f"bitmedi, iptal edilip sıradakine geçiliyor")
             self._cancel_steam_community_upload()
+            self._queue_history(name, status_path, "yarıda")
             self.after(300, lambda: self._process_queue_item(entries, index + 1))
             return
         self.after(1000, lambda: self._queue_poll_upload(entries, index, status_path, deadline))

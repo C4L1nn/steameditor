@@ -245,6 +245,43 @@ def save_projects(projects: dict):
         _log.error(f"[PROJECTS SAVE ERR] {e}")
 
 
+_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_history.json")
+
+
+def load_history() -> list:
+    """Upload geçmişini liste olarak döner (eski -> yeni sırada).
+    Kayıt: {time, source ('manuel'|'kuyruk'), label, files, completed, state}."""
+    if not os.path.exists(_HISTORY_FILE):
+        return []
+    try:
+        with open(_HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        _log.error(f"[HISTORY LOAD ERR] {e}")
+        return []
+
+
+def append_history(record: dict, limit: int = 200):
+    """Geçmişe kayıt ekler; en fazla `limit` kayıt tutulur (eskiler düşer)."""
+    records = load_history()
+    records.append(record)
+    records = records[-limit:]
+    try:
+        with open(_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(records, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        _log.error(f"[HISTORY SAVE ERR] {e}")
+
+
+def clear_history():
+    try:
+        if os.path.exists(_HISTORY_FILE):
+            os.remove(_HISTORY_FILE)
+    except Exception as e:
+        _log.error(f"[HISTORY CLEAR ERR] {e}")
+
+
 def load_config() -> dict:
     """steam_splitter_config.json'u dict olarak döner."""
     defaults = {

@@ -14,6 +14,7 @@ def isolated_files(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "_PRESETS_FILE", str(tmp_path / "presets.json"))
     monkeypatch.setattr(config, "_PROFILES_FILE", str(tmp_path / "profiles.json"))
     monkeypatch.setattr(config, "_PROJECTS_FILE", str(tmp_path / "projects.json"))
+    monkeypatch.setattr(config, "_HISTORY_FILE", str(tmp_path / "history.json"))
     yield
 
 
@@ -294,3 +295,46 @@ def test_load_projects_ignores_non_dict_json():
     with open(config._PROJECTS_FILE, "w", encoding="utf-8") as f:
         json.dump(["not", "a", "dict"], f)
     assert config.load_projects() == {}
+
+
+# ── upload geçmişi ──────────────────────────────────────────
+
+def test_history_empty_when_file_missing():
+    assert config.load_history() == []
+
+
+def test_history_append_and_load_roundtrip():
+    rec = {"time": 1234.5, "source": "kuyruk", "label": "Kılıç Modu",
+           "files": 5, "completed": 5, "state": "done"}
+    config.append_history(rec)
+    config.append_history({**rec, "state": "failed"})
+    loaded = config.load_history()
+    assert len(loaded) == 2
+    assert loaded[0]["state"] == "done"
+    assert loaded[1]["state"] == "failed"
+
+
+def test_history_respects_record_limit():
+    for i in range(210):
+        config.append_history({"time": i, "source": "manuel", "label": str(i),
+                               "files": 1, "completed": 1, "state": "done"}, limit=200)
+    loaded = config.load_history()
+    assert len(loaded) == 200
+    assert loaded[0]["label"] == "10"  # ilk 10 kayıt düştü
+    assert loaded[-1]["label"] == "209"
+
+
+def test_history_survives_corrupt_json():
+    with open(config._HISTORY_FILE, "w", encoding="utf-8") as f:
+        f.write("{broken json")
+    assert config.load_history() == []
+    config.append_history({"time": 1, "source": "manuel", "label": "x",
+                           "files": 1, "completed": 0, "state": "yarıda"})
+    assert len(config.load_history()) == 1
+
+
+def test_clear_history_removes_file():
+    config.append_history({"time": 1, "source": "manuel", "label": "x",
+                           "files": 1, "completed": 1, "state": "done"})
+    config.clear_history()
+    assert config.load_history() == []
