@@ -227,14 +227,24 @@ def test_uniform_boxes_cover_full_width_when_divisible():
         assert boxes[i][2] == boxes[i + 1][0]
 
 
-def test_uniform_last_box_absorbs_remainder_pixels():
-    # 754 // 5 = 150 kalan 4 -> son parça 150+4=154 olmalı, piksel kaybı olmamalı
+def test_uniform_remainder_distributed_to_first_parts():
+    """754/5: kalan 4 px İLK 4 parçaya +1 olarak dağıtılır (151,151,151,151,150)
+    — Steam vitrini kesim noktaları 151-302-453-604 (kullanıcının elle
+    doğrulanmış notları). Kalan son parçaya yığılırsa vitrinde hiza kayar."""
     img = Image.new("RGB", (1000, 800))
     template = {"mode": "uniform", "width": 754, "height": 1250, "parts": 5}
     _, boxes = core._template_preview_canvas(img, template)
     widths = [b[2] - b[0] for b in boxes]
-    assert widths == [150, 150, 150, 150, 154]
+    assert widths == [151, 151, 151, 151, 150]
     assert sum(widths) == 754
+    assert [b[0] for b in boxes] == [0, 151, 302, 453, 604]
+
+
+def test_uniform_slice_bounds_matches_steam_vitrin_notes():
+    assert core.uniform_slice_bounds(754, 5) == [
+        (0, 151), (151, 302), (302, 453), (453, 604), (604, 754)]
+    assert core.uniform_slice_bounds(750, 5) == [
+        (0, 150), (150, 300), (300, 450), (450, 600), (600, 750)]
 
 
 def test_uniform_preview_multi_band_grid_boxes():
@@ -350,7 +360,7 @@ def test_process_image_uniform_remainder_pixels(tmp_path):
                 "patch": False, "prefix": "t"}
     created = core.process_image(str(src), str(tmp_path), template, None)
     widths = [Image.open(p).size[0] for p in created]
-    assert widths == [150, 150, 150, 150, 154]
+    assert widths == [151, 151, 151, 151, 150]
     assert sum(widths) == 754
 
 

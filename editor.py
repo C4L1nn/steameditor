@@ -67,6 +67,7 @@ from core import (
     text_overlay_bbox,
     split_gif_frames,
     template_output_summary,
+    uniform_slice_bounds,
 )
 
 from config import (
@@ -139,11 +140,12 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
         messagebox.showinfo("Bilgi", "Manuel crop şu an sadece statik görsellerde aktif. GIF için otomatik bölme kullan.")
         return []
 
-    # Tüm parçaları tek listede tut
+    # Tüm parçaları tek listede tut — genişlikler uniform_slice_bounds'tan
+    # (754/5 -> 151,151,151,151,150; kalan px İLK parçalara dağıtılır)
     if mode == "uniform":
-        pw = template["width"] // template["parts"]
         ph = template["height"]  # sabit — otomatik Böl ile tutarlı (cover-crop)
-        parts_info = [{"width": pw, "height": ph} for _ in range(template["parts"])]
+        parts_info = [{"width": x2 - x1, "height": ph}
+                      for x1, x2 in uniform_slice_bounds(template["width"], template["parts"])]
         band_h = template["height"]
     else:
         # Çoklu bant kavramı sadece 'uniform' (eşit parçalı) şablonlarda
@@ -181,13 +183,10 @@ def manual_crop_with_template(master, img_path: str, outdir: str, template: dict
             region = region.resize(target_size, Image.LANCZOS)
 
         created = []
-        slice_w = tw_total // len(parts_info)
         idx = 1
         for band in range(bands_eff):
             y1 = band * band_h
-            for i in range(len(parts_info)):
-                x1 = i * slice_w
-                x2 = tw_total if i == len(parts_info) - 1 else (i + 1) * slice_w
+            for x1, x2 in uniform_slice_bounds(tw_total, len(parts_info)):
                 piece = region.crop((x1, y1, x2, y1 + band_h))
                 full = save_output_piece(piece, outdir, f"{prefix}_{base}_{idx:02}",
                                          cfg, bool(template.get("patch")))
@@ -304,8 +303,9 @@ class TemplateCard(ctk.CTkFrame):
     def _info_text(self, t):
         m = t.get("mode")
         if m == "uniform":
-            pw = t["width"] // t["parts"]
-            base = f"{t['parts']} parça · {pw}px × dinamik"
+            bounds = uniform_slice_bounds(t["width"], t["parts"])
+            pw = bounds[0][1] - bounds[0][0]
+            base = f"{t['parts']} parça · {pw}px × {t.get('height', '?')}px"
             return base + ("  ·  Patch ✓" if t.get("patch") else "")
         if m == "multi":
             parts = t.get("parts", [])
@@ -1661,13 +1661,14 @@ class App(ctk.CTk):
         gx, gy = self._grid_pos
         gw, gh = pv["grid"]
         parts, th = pv["parts"], pv["band_h"]
-        sw_g = pv["slice_w"] * gscale   # grid içi dilim genişliği (orijinal px)
         th_g = th * gscale
+        # Gerçek kesim sınırları (kalan px ilk parçalarda: 754 -> 151,151,151,151,150)
+        bounds = uniform_slice_bounds(pv["tw_total"], parts)
         for b in range(pv["bands"]):
             y1 = gy + b * th_g
-            for i in range(parts):
-                x1 = gx + i * sw_g
-                x2 = gx + (gw if i == parts - 1 else (i + 1) * sw_g)
+            for i, (bx1, bx2) in enumerate(bounds):
+                x1 = gx + bx1 * gscale
+                x2 = gx + bx2 * gscale
                 fill = (249, 115, 22, 26) if (b * parts + i) % 2 == 0 else (99, 102, 241, 22)
                 d.rectangle((x1 * s, y1 * s, x2 * s, (y1 + th_g) * s),
                             fill=fill, outline=(249, 115, 22, 255), width=2)
@@ -1689,8 +1690,9 @@ class App(ctk.CTk):
         W, H = pv["img_size"]
         patch = " · patch açık" if self.template.get("patch") else ""
         scale_txt = "" if abs(gscale - 1.0) < 0.01 else f" · seçim %{round(gscale * 100)} → ölçeklenir"
+        first_w = bounds[0][1] - bounds[0][0]
         info = (f"{pv['bands'] * parts} parça ({pv['bands']} bant) · konum {gx},{gy}"
-                f"{scale_txt} · parça {pv['slice_w']}×{th}px · kaynak {W}×{H}px{patch}"
+                f"{scale_txt} · parça {first_w}×{th}px · kaynak {W}×{H}px{patch}"
                 f" · 🖱 sürükle / köşeden boyutlandır")
         batch_count = len(self._batch_files) if self._batch_files else 0
         self._drop.show_image(base, info, batch_count=batch_count)

@@ -19,9 +19,11 @@ _log = get_logger("config")
 TEMPLATES = [
     {
         "name": "Workshop 5-Parça (Otomatik Boyut)",
-        "mode": "uniform",       # 5 eşit dikey parça
-        "width": 750,            # hedef canvas genişlik (5x150)
-        "height": 1250,          # Varsayılan referans (artık dinamik değişiyor)
+        "mode": "uniform",       # 5 dikey parça (151,151,151,151,150)
+        "width": 754,            # hedef canvas — Steam vitrini kesim noktaları
+                                 # 151-302-453-604 (elle doğrulanmış akış; 750
+                                 # kullanılırsa vitrinde hiza kayması oluşur)
+        "height": 1250,
         "parts": 5,
         "patch": True,
         "prefix": "work"
@@ -30,8 +32,8 @@ TEMPLATES = [
         "name": "Çizim Vitrini 2-Parça (506 + 100)",
         "mode": "multi",         # her parça farklı boyut
         "parts": [
-            {"width": 506, "height": 800},
-            {"width": 100, "height": 800},
+            {"width": 506, "height": 944},
+            {"width": 100, "height": 944},
         ],
         "patch": False,
         "prefix": "art"
@@ -352,8 +354,8 @@ def load_config() -> dict:
         "onboarding_tips_shown": False,  # ilk interaktif önizlemede rehber balonu
         "output_format": "png",     # png | jpg (jpg'de patch uygulanmaz)
         "jpg_quality": 90,
-        "gif_lossy": 80,
-        "gif_colors": 128,
+        "gif_lossy": 30,     # 80 gözle görülür kalite kaybı yapıyordu
+        "gif_colors": 256,
     }
     if not os.path.exists(_CONFIG_FILE):
         return defaults

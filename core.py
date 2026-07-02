@@ -189,6 +189,24 @@ def save_output_piece(piece: Image.Image, outdir: str, stem: str,
     return full
 
 
+def uniform_slice_bounds(total_w: int, parts: int) -> list[tuple[int, int]]:
+    """Uniform şablonda dikey kesim sınırları [(x1,x2),...]. Kalan pikseller
+    İLK parçalara +1px olarak dağıtılır — Steam vitrini akışının beklediği
+    düzen: 754/5 -> 151,151,151,151,150 (kesim noktaları 151-302-453-604,
+    kullanıcının elle doğrulanmış notlarıyla birebir). Eskiden kalan SON
+    parçaya yığılıyordu (150,150,150,150,154) ve vitrinde hiza kaydırıyordu."""
+    parts = max(1, int(parts))
+    base = total_w // parts
+    rem = total_w % parts
+    bounds = []
+    x = 0
+    for i in range(parts):
+        w = base + (1 if i < rem else 0)
+        bounds.append((x, x + w))
+        x += w
+    return bounds
+
+
 def resize_cover(img: Image.Image, target_w: int, target_h: int) -> Image.Image:
     """
     Görseli oranı bozmadan hedef alanı tamamen dolduracak şekilde büyüt,
@@ -450,7 +468,7 @@ def _template_preview_canvas(img: Image.Image, template: dict,
         target_w = template["width"]
         target_h = template["height"]
         parts = template["parts"]
-        slice_w = target_w // parts
+        bounds = uniform_slice_bounds(target_w, parts)
 
         if band_count > 1:
             # Çoklu bant: canvas = kaynağın kendisi (native), kutular üst-orta
@@ -461,19 +479,14 @@ def _template_preview_canvas(img: Image.Image, template: dict,
             boxes = []
             for band in range(max(1, full_bands)):
                 y1 = band * target_h
-                for i in range(parts):
-                    bx1 = x0 + i * slice_w
-                    bx2 = x0 + (target_w if i == parts - 1 else (i + 1) * slice_w)
-                    boxes.append((bx1, y1, bx2, y1 + target_h))
+                for bx1, bx2 in bounds:
+                    boxes.append((x0 + bx1, y1, x0 + bx2, y1 + target_h))
             return img, boxes
 
         # Tek bant: sabit target_w x target_h canvas'a cover-crop
         # (multi/single ile tutarlı) — kaynağın kendi oranına göre değil.
         canvas = resize_cover(img, target_w, target_h)
-        boxes = [
-            (i * slice_w, 0, (target_w if i == parts - 1 else (i + 1) * slice_w), target_h)
-            for i in range(parts)
-        ]
+        boxes = [(x1, 0, x2, target_h) for x1, x2 in bounds]
         return canvas, boxes
 
     if mode == "multi":
@@ -673,15 +686,12 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
         target_w = template["width"]
         target_h = template["height"]
         parts = template["parts"]
-        slice_w = target_w // parts
 
         # Sabit target_w x target_h canvas'a cover-crop — process_image
         # ve multi/single modlarıyla tutarlı (bkz. resize_cover).
         scaled = [_apply_effects_pipeline(resize_cover(f, target_w, target_h), cfg) for f in frames]
 
-        for i in range(parts):
-            x1 = i * slice_w
-            x2 = target_w if i == parts - 1 else x1 + slice_w
+        for i, (x1, x2) in enumerate(uniform_slice_bounds(target_w, parts)):
             part_frames = [fr.crop((x1, 0, x2, target_h)) for fr in scaled]
             outpath = os.path.join(outdir, f"{prefix}_{base}_{i+1:02}.gif")
             _save_animated_gif(part_frames, durations, outpath, False)
@@ -769,11 +779,7 @@ def process_image(path: str, outdir: str, template: dict, cfg: dict | None = Non
         # hiç kullanılmıyordu).
         img = _apply_effects_pipeline(resize_cover(original, target_w, target_h), cfg)
 
-        slice_w = target_w // parts
-
-        for i in range(parts):
-            x1 = i * slice_w
-            x2 = target_w if i == parts - 1 else x1 + slice_w
+        for i, (x1, x2) in enumerate(uniform_slice_bounds(target_w, parts)):
             piece = img.crop((x1, 0, x2, target_h))
             full = save_output_piece(piece, outdir, f"{prefix}_{base}_{i+1:02}",
                                      cfg, bool(template.get("patch")))
