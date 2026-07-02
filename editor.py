@@ -59,10 +59,12 @@ from core import (
     patch_png_last_byte,
     process_folder,
     process_image,
+    apply_text_overlay,
     render_showcase_preview,
     render_template_preview,
     resize_cover,
     save_output_piece,
+    text_overlay_bbox,
     split_gif_frames,
     template_output_summary,
 )
@@ -485,13 +487,15 @@ class DropZone(ctk.CTkFrame):
         else:
             self._on_file(paths[0])
 
-    def bind_preview_mouse(self, on_press, on_drag):
-        """Önizleme görselinin üstünde sürükleme desteği (grid taşıma).
+    def bind_preview_mouse(self, on_press, on_drag, on_release=None):
+        """Önizleme görselinin üstünde sürükleme desteği (grid/metin taşıma).
         Boş (idle) alandaki tıklama davranışı değişmez — sadece görsel
         gösterilirken aktif olan label'a bağlanır."""
         self._preview_label.configure(cursor="fleur")
         self._preview_label.bind("<ButtonPress-1>", on_press, add="+")
         self._preview_label.bind("<B1-Motion>", on_drag, add="+")
+        if on_release:
+            self._preview_label.bind("<ButtonRelease-1>", on_release, add="+")
 
     def show_image(self, img: Image.Image, info: str = "", batch_count: int = 0):
         self._stop_pulse()
@@ -1318,8 +1322,8 @@ class App(ctk.CTk):
         self._drop = DropZone(main, self._on_file_drop, self._on_batch_drop,
                               initialdir_getter=lambda: self._cfg.get("last_input_dir", ""))
         self._drop.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
-        # Bölme grid'i önizlemenin üstünde fareyle sürüklenebilir
-        self._drop.bind_preview_mouse(self._grid_press, self._grid_drag)
+        # Bölme grid'i ve metin katmanı önizlemenin üstünde fareyle sürüklenebilir
+        self._drop.bind_preview_mouse(self._grid_press, self._grid_drag, self._grid_release)
 
         # Split önizleme (başta gizli)
         self._split_prev = SplitPreview(
@@ -1527,7 +1531,9 @@ class App(ctk.CTk):
         tmpl = self.template
         tw_total, th = tmpl["width"], tmpl["height"]
         parts = tmpl["parts"]
-        img = _apply_effects_pipeline(img, self._cfg)
+        # Metin katmanı tabana BASILMAZ — overlay çiziminde canlı eklenir ki
+        # kullanıcı metni fareyle sürükleyebilsin (taban cache'i bozulmadan).
+        img = _apply_effects_pipeline(img, {**self._cfg, "text_overlay_enabled": False})
         W, H = img.size
 
         # Grid ölçeği kaynağa sığacak şekilde kısıtlanır (en az 1 bant)
@@ -1565,6 +1571,13 @@ class App(ctk.CTk):
         if not pv:
             return
         base = pv["disp"].copy()
+        # Metin katmanı canlı: yüzde tabanlı konum küçük kopyada da orantılı
+        # aynı yere düşer; kutusu hit-test için saklanır (fareyle sürüklenir).
+        if self._cfg.get("text_overlay_enabled"):
+            base = apply_text_overlay(base, self._cfg).convert("RGB")
+            pv["text_bbox"] = text_overlay_bbox(base.size, self._cfg)
+        else:
+            pv["text_bbox"] = None
         d = ImageDraw.Draw(base, "RGBA")
         s = pv["scale"]
         gscale = self._grid_scale
@@ -1602,6 +1615,16 @@ class App(ctk.CTk):
         s = pv["scale"]
         gx, gy = self._grid_pos
         gw, gh = pv["grid"]
+        # Öncelik 1: metin katmanının üstüne basıldıysa metni sürükle
+        tb = pv.get("text_bbox")
+        if tb and tb[0] - 4 <= e.x <= tb[2] + 4 and tb[1] - 4 <= e.y <= tb[3] + 4:
+            disp = pv["disp"]
+            tw_txt, th_txt = tb[2] - tb[0], tb[3] - tb[1]
+            denom_x = max(1, disp.width - tw_txt)
+            denom_y = max(1, disp.height - th_txt)
+            pv["press"] = ("text", e.x, e.y, tb[0] / denom_x, tb[1] / denom_y,
+                           denom_x, denom_y)
+            return
         cx, cy = (gx + gw) * s, (gy + gh) * s
         if abs(e.x - cx) <= 12 and abs(e.y - cy) <= 12:
             # köşe tutamacı: boyutlandırma (delta tabanlı, DPI'dan bağımsız)
@@ -1609,12 +1632,27 @@ class App(ctk.CTk):
         else:
             pv["press"] = ("move", e.x, e.y, gx, gy)
 
+    def _grid_release(self, _e=None):
+        pv = self._pv
+        if not pv:
+            return
+        press = pv.pop("press", None)
+        if press and press[0] == "text":
+            save_config(self._cfg)  # sürüklenen metin konumu kalıcı olsun
+
     def _grid_drag(self, e):
         pv = self._pv
         if not pv or "press" not in pv:
             return
         mode = pv["press"][0]
         W, H = pv["img_size"]
+        if mode == "text":
+            _, px, py, x0_pct, y0_pct, denom_x, denom_y = pv["press"]
+            xp = max(0.0, min(1.0, x0_pct + (e.x - px) / denom_x))
+            yp = max(0.0, min(1.0, y0_pct + (e.y - py) / denom_y))
+            self._cfg["text_overlay_custom_pos"] = [round(xp, 4), round(yp, 4)]
+            self._draw_grid_overlay()
+            return
         if mode == "resize":
             _, px, py, scale0, gw_disp0 = pv["press"]
             new_scale = scale0 * (1 + (e.x - px) / gw_disp0)

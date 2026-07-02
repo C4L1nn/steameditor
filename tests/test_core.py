@@ -152,6 +152,35 @@ def test_apply_text_overlay_draws_text_at_requested_position():
     assert all(p == (10, 10, 10) for p in top.getdata()), "metin yanlış konumda (üstte) görünüyor"
 
 
+def test_apply_text_overlay_custom_pos_overrides_named_position():
+    """text_overlay_custom_pos [0,0] metni SOL ÜSTE koymalı — isimli konum
+    'Alt Orta' olsa bile (sürüklenen serbest konum kazanır)."""
+    img = Image.new("RGB", (400, 300), (10, 10, 10))
+    out = core.apply_text_overlay(img, {
+        "text_overlay_enabled": True, "text_overlay_text": "DRAG",
+        "text_overlay_color": "#FFFFFF", "text_overlay_size": 10,
+        "text_overlay_position": "Alt Orta", "text_overlay_opacity": 100,
+        "text_overlay_custom_pos": [0.0, 0.0],
+    }).convert("RGB")
+    top_left = out.crop((0, 0, 200, 80))
+    assert any(p[0] > 150 for p in top_left.getdata()), "metin sol üstte değil"
+    bottom = out.crop((0, 250, 400, 300))
+    assert all(p == (10, 10, 10) for p in bottom.getdata()), "metin hâlâ altta çiziliyor"
+
+
+def test_text_overlay_bbox_matches_settings():
+    cfg = {"text_overlay_enabled": True, "text_overlay_text": "HELLO",
+           "text_overlay_size": 10, "text_overlay_position": "Orta",
+           "text_overlay_opacity": 100}
+    bb = core.text_overlay_bbox((400, 300), cfg)
+    assert bb is not None
+    x1, y1, x2, y2 = bb
+    assert 0 <= x1 < x2 <= 400 and 0 <= y1 < y2 <= 300
+    # kapalıyken/metin boşken None
+    assert core.text_overlay_bbox((400, 300), {**cfg, "text_overlay_enabled": False}) is None
+    assert core.text_overlay_bbox((400, 300), {**cfg, "text_overlay_text": " "}) is None
+
+
 # ── _apply_effects_pipeline / uniform parça bütünlüğü ─────
 
 def test_effects_pipeline_text_reads_coherently_across_uniform_parts(tmp_path):

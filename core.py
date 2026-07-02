@@ -337,23 +337,73 @@ _TEXT_OVERLAY_POSITIONS = (
 )
 
 
+def _text_overlay_geometry(size: tuple[int, int], cfg: dict):
+    """Metin katmanının (W,H) canvas'taki yerleşimini TEK yerde hesaplar:
+    (text, font, bbox, x, y, tw, th) döner; metin yoksa None.
+    text_overlay_custom_pos ([x_pct, y_pct], 0..1) varsa isimli konumu ezer —
+    kullanıcı metni önizlemede sürükleyerek serbest yerleştirmiş demektir."""
+    text = (cfg.get("text_overlay_text") or "").strip()
+    if not text:
+        return None
+    W, H = size
+    size_pct = max(1, min(30, int(cfg.get("text_overlay_size", 6) or 6)))
+    font_size = max(10, int(H * size_pct / 100))
+    font = _load_overlay_font(font_size)
+
+    dummy = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    bbox = dummy.textbbox((0, 0), text, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    margin = max(8, int(W * 0.03))
+
+    custom = cfg.get("text_overlay_custom_pos")
+    if isinstance(custom, (list, tuple)) and len(custom) == 2:
+        x = int(float(custom[0]) * max(1, W - tw))
+        y = int(float(custom[1]) * max(1, H - th))
+        x = max(0, min(max(0, W - tw), x))
+        y = max(0, min(max(0, H - th), y))
+    else:
+        positions = {
+            "Üst Sol": (margin, margin),
+            "Üst Orta": ((W - tw) // 2, margin),
+            "Üst Sağ": (W - tw - margin, margin),
+            "Alt Sol": (margin, H - th - margin),
+            "Alt Orta": ((W - tw) // 2, H - th - margin),
+            "Alt Sağ": (W - tw - margin, H - th - margin),
+            "Orta": ((W - tw) // 2, (H - th) // 2),
+        }
+        x, y = positions.get(cfg.get("text_overlay_position", "Alt Orta"), positions["Alt Orta"])
+    return text, font, bbox, x, y, tw, th
+
+
+def text_overlay_bbox(size: tuple[int, int], cfg: dict | None):
+    """Metnin (W,H) canvas'taki kutusu (x1,y1,x2,y2) — hit-test/sürükleme için.
+    Metin kapalı/boşsa None."""
+    if not cfg or not bool(cfg.get("text_overlay_enabled", False)):
+        return None
+    geo = _text_overlay_geometry(size, cfg)
+    if geo is None:
+        return None
+    _text, _font, _bbox, x, y, tw, th = geo
+    return (x, y, x + tw, y + th)
+
+
 def apply_text_overlay(img: Image.Image, cfg: dict | None) -> Image.Image:
     """Görselin üstüne başlık/imza metni bindirir (border FX'ten sonra, en üstte).
     Uniform şablonlarda tüm canvas'a tek seferde uygulanır; Workshop parçaları
-    yan yana dizilince metin de Border FX gibi bütün olarak birleşir."""
+    yan yana dizilince metin de Border FX gibi bütün olarak birleşir.
+    Konum yüzde tabanlı hesaplandığı için aynı cfg, küçültülmüş önizleme
+    kopyasında da orantılı olarak aynı yere düşer (canlı sürükleme bundan
+    yararlanır)."""
     if not cfg or not bool(cfg.get("text_overlay_enabled", False)):
         return img
-    text = (cfg.get("text_overlay_text") or "").strip()
-    if not text:
+    geo = _text_overlay_geometry(img.size, cfg)
+    if geo is None:
         return img
     try:
+        text, font, bbox, x, y, _tw, _th = geo
         base = img.convert("RGBA")
         layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(layer)
-
-        size_pct = max(1, min(30, int(cfg.get("text_overlay_size", 6) or 6)))
-        font_size = max(10, int(base.height * size_pct / 100))
-        font = _load_overlay_font(font_size)
 
         color = _parse_hex_color(cfg.get("text_overlay_color", "#FFFFFF"), (255, 255, 255))
         raw_opacity = cfg.get("text_overlay_opacity", 100)
@@ -362,20 +412,6 @@ def apply_text_overlay(img: Image.Image, cfg: dict | None) -> Image.Image:
         opacity = max(0, min(100, int(raw_opacity))) / 100.0
         alpha = int(255 * opacity)
 
-        bbox = draw.textbbox((0, 0), text, font=font)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        margin = max(8, int(base.width * 0.03))
-
-        positions = {
-            "Üst Sol": (margin, margin),
-            "Üst Orta": ((base.width - tw) // 2, margin),
-            "Üst Sağ": (base.width - tw - margin, margin),
-            "Alt Sol": (margin, base.height - th - margin),
-            "Alt Orta": ((base.width - tw) // 2, base.height - th - margin),
-            "Alt Sağ": (base.width - tw - margin, base.height - th - margin),
-            "Orta": ((base.width - tw) // 2, (base.height - th) // 2),
-        }
-        x, y = positions.get(cfg.get("text_overlay_position", "Alt Orta"), positions["Alt Orta"])
         x -= bbox[0]
         y -= bbox[1]
 

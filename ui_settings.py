@@ -435,6 +435,10 @@ class SettingsPage(ctk.CTkFrame):
         text_size_slider = self._slider_row(p, "Boyut", cfg, "text_overlay_size", 6,
                                             from_=1, to=30, fmt="{}%")
         text_opacity_slider = self._slider_row(p, "Opaklik", cfg, "text_overlay_opacity", 100)
+        ctk.CTkLabel(p, text="İpucu: metni ana önizlemede fareyle tutup istediğin yere "
+                             "sürükleyebilirsin (serbest konum).",
+                     font=ctk.CTkFont("Segoe UI", 9), text_color=C_DIM,
+                     wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 4))
 
         self._sep_line(p)
 
@@ -482,6 +486,10 @@ class SettingsPage(ctk.CTkFrame):
             cfg["text_overlay_enabled"] = bool(text_enabled_var.get())
             cfg["text_overlay_text"] = text_entry.get().strip()
             cfg["text_overlay_color"] = text_color_entry.get().strip() or "#FFFFFF"
+            # Menüden konum seçmek, önizlemede sürüklenerek belirlenmiş serbest
+            # konumu (custom_pos) sıfırlar — iki kaynak yarışmasın.
+            if cfg.get("text_overlay_position") != position_var.get():
+                cfg.pop("text_overlay_custom_pos", None)
             cfg["text_overlay_position"] = position_var.get()
             cfg["text_overlay_size"] = int(text_size_slider.get())
             cfg["text_overlay_opacity"] = int(text_opacity_slider.get())
