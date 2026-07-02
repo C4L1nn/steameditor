@@ -349,6 +349,7 @@ def load_config() -> dict:
         "auto_enhance_intensity": 50,
         "multi_band_count": 3,
         "autocrop_enabled": False,  # bölmeden önce şeffaf/tek renk kenarı kırp
+        "onboarding_tips_shown": False,  # ilk interaktif önizlemede rehber balonu
         "output_format": "png",     # png | jpg (jpg'de patch uygulanmaz)
         "jpg_quality": 90,
         "gif_lossy": 80,

@@ -391,6 +391,24 @@ class DropZone(ctk.CTkFrame):
                      font=ctk.CTkFont("Segoe UI", 10, weight="bold"),
                      text_color=C_DIM).pack(padx=16, pady=6)
 
+        # Keşfedilebilirlik: gizli etkileşimlerin özeti (sadece boş halde
+        # görünür — görsel yüklenince kaybolur, akışı hiç kalabalıklaştırmaz)
+        tips = ctk.CTkFrame(self._idle_frame, fg_color="transparent")
+        tips.pack(pady=(22, 0))
+        ctk.CTkLabel(tips, text="İPUÇLARI",
+                     font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
+                     text_color=C_HINT).pack()
+        for line in (
+            "🖱  Bölme grid'ini sürükle · köşesinden büyüt/küçült",
+            "🖱  Çift tık = Böl   ·   Sağ tık = hizalama menüsü",
+            "✏  Metin katmanını önizlemede sürükleyerek yerleştir",
+            "🎮  Canlı vitrin: bant sayısının yanındaki buton",
+            "⌨  Ctrl+O aç   ·   Ctrl+Enter böl   ·   Esc geri",
+        ):
+            ctk.CTkLabel(tips, text=line,
+                         font=ctk.CTkFont("Segoe UI", 10),
+                         text_color=C_DIM).pack(pady=1)
+
         self._idle_frame.pack(expand=True)
 
         # Preview label
@@ -1592,6 +1610,24 @@ class App(ctk.CTk):
                     "slice_w": tw_total // parts, "tw_total": tw_total}
         self._apply_grid_geometry()
         self._draw_grid_overlay()
+        self._show_onboarding_tip()
+
+    def _show_onboarding_tip(self):
+        """İlk interaktif önizlemede TEK seferlik rehber balonu — grid'in
+        sürüklenebildiğini bilmeyen kullanıcı için. 9 sn sonra kaybolur,
+        bir daha gösterilmez (onboarding_tips_shown)."""
+        if self._cfg.get("onboarding_tips_shown"):
+            return
+        self._cfg["onboarding_tips_shown"] = True
+        save_config(self._cfg)
+        tip = ctk.CTkLabel(
+            self._drop,
+            text="  💡 Grid'i fareyle sürükle · köşesinden boyutlandır · sağ tık: hizalama menüsü  ",
+            font=ctk.CTkFont("Segoe UI", 11, weight="bold"),
+            text_color=C_BG0, fg_color=C_ACCENT, corner_radius=10,
+            padx=10, pady=6)
+        tip.place(relx=0.5, y=16, anchor="n")
+        self.after(9000, lambda: tip.winfo_exists() and tip.destroy())
 
     def _apply_grid_geometry(self):
         """Ölçekten grid boyutunu türetir, konumu kaynağa göre kıskaçlar."""
