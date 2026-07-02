@@ -4,8 +4,6 @@ editor.py bu modülden import eder. Tkinter'a bağlı değildir.
 """
 import os
 import json
-import urllib.parse
-import urllib.request
 
 from applog import get_logger
 
@@ -83,11 +81,6 @@ STEAM_UPLOAD_STEPS = [
     "İlgili console kodunu yapıştır",
     "Parçaları sırayla yükle ve görünürlüğü kontrol et",
 ]
-
-
-STEAM_PUBLISHED_FILE_DETAILS_URL = (
-    "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
-)
 
 
 STEAM_DIRECT_UPLOAD_NOTE = (
@@ -395,23 +388,6 @@ def steam_api_config_errors(cfg: dict) -> list[str]:
     if not cfg.get("steam_published_file_id", "").strip():
         errors.append("steam_published_file_id boş")
     return errors
-
-
-def fetch_steam_published_file_details(published_file_id: str) -> dict:
-    payload = urllib.parse.urlencode({
-        "itemcount": 1,
-        "publishedfileids[0]": published_file_id,
-    }).encode("utf-8")
-    req = urllib.request.Request(
-        STEAM_PUBLISHED_FILE_DETAILS_URL,
-        data=payload,
-        method="POST",
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-    )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    details = data.get("response", {}).get("publishedfiledetails", [])
-    return details[0] if details else {}
 
 
 def get_template_console_snippet(template: dict) -> tuple[str, str]:

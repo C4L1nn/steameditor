@@ -72,23 +72,12 @@ from core import (
 
 from config import (
     PROFILE_KEYS,
-    STEAM_CONSOLE_SNIPPETS,
-    STEAM_DIRECT_UPLOAD_NOTE,
-    STEAM_HELPER_LINKS,
-    STEAM_PUBLISHED_FILE_DETAILS_URL,
-    STEAM_UPLOAD_STEPS,
     TEMPLATES,
-    TEMPLATE_SNIPPET_HINTS,
-    _CONFIG_FILE,
-    _PRESETS_FILE,
-    _masked_key,
     append_history,
     clear_recovery,
     load_recovery,
     save_recovery,
     build_steam_upload_manifest,
-    fetch_steam_published_file_details,
-    get_template_console_snippet,
     load_config,
     load_custom_presets,
     load_profiles,
@@ -97,7 +86,6 @@ from config import (
     save_custom_presets,
     save_profiles,
     save_projects,
-    steam_api_config_errors,
     upload_status_path,
 )
 
@@ -506,11 +494,11 @@ class DropZone(ctk.CTkFrame):
             self._on_file(paths[0])
 
     def bind_preview_mouse(self, on_press, on_drag, on_release=None,
-                           on_double=None, on_context=None):
+                           on_double=None, on_context=None, on_wheel=None):
         """Önizleme görselinin üstünde fare desteği (grid/metin taşıma,
-        çift tık = böl, sağ tık = hizalama menüsü). Boş (idle) alandaki
-        tıklama davranışı değişmez — sadece görsel gösterilirken aktif
-        olan label'a bağlanır."""
+        çift tık = böl, sağ tık = hizalama menüsü, tekerlek = zoom). Boş
+        (idle) alandaki tıklama davranışı değişmez — sadece görsel
+        gösterilirken aktif olan label'a bağlanır."""
         self._preview_label.configure(cursor="fleur")
         self._preview_label.bind("<ButtonPress-1>", on_press, add="+")
         self._preview_label.bind("<B1-Motion>", on_drag, add="+")
@@ -520,6 +508,8 @@ class DropZone(ctk.CTkFrame):
             self._preview_label.bind("<Double-Button-1>", on_double, add="+")
         if on_context:
             self._preview_label.bind("<Button-3>", on_context, add="+")
+        if on_wheel:
+            self._preview_label.bind("<MouseWheel>", on_wheel, add="+")
 
     def show_image(self, img: Image.Image, info: str = "", batch_count: int = 0):
         self._stop_pulse()
@@ -1277,22 +1267,6 @@ class App(ctk.CTk):
                    command=self._open_gif_maker
                    ).pack(fill="x", pady=2)
 
-        AnimButton(tools_f, text="🎨  Efektler",
-                   nc=C_BG3, hc=C_BG4,
-                   height=32, corner_radius=8,
-                   font=ctk.CTkFont("Segoe UI", 11),
-                   text_color=C_TEXT,
-                   command=lambda: self._open_settings_page("Efektler")
-                   ).pack(fill="x", pady=2)
-
-        AnimButton(tools_f, text="☁  Steam API Kontrol",
-                   nc=C_BG3, hc=C_BG4,
-                   height=32, corner_radius=8,
-                   font=ctk.CTkFont("Segoe UI", 11),
-                   text_color=C_TEXT,
-                   command=lambda: self._open_settings_page("Steam API")
-                   ).pack(fill="x", pady=2)
-
         AnimButton(tools_f, text="🌐  Community Upload",
                    nc=C_BG3, hc=C_BG4,
                    height=32, corner_radius=8,
@@ -1360,10 +1334,11 @@ class App(ctk.CTk):
                               initialdir_getter=lambda: self._cfg.get("last_input_dir", ""))
         self._drop.grid(row=0, column=0, sticky="nsew", pady=(0, 12))
         # Bölme grid'i ve metin katmanı önizlemenin üstünde fareyle sürüklenebilir;
-        # çift tık = anında Böl, sağ tık = hizalama menüsü
+        # çift tık = anında Böl, sağ tık = hizalama menüsü, tekerlek = zoom
         self._drop.bind_preview_mouse(self._grid_press, self._grid_drag, self._grid_release,
                                       on_double=self._preview_double_click,
-                                      on_context=self._preview_context_menu)
+                                      on_context=self._preview_context_menu,
+                                      on_wheel=self._preview_zoom)
         self._grid_menu = Menu(self, tearoff=0, bg=C_BG2, fg=C_TEXT,
                                activebackground=C_ACCENT, activeforeground=C_BG0,
                                relief="flat", bd=0)
@@ -1373,6 +1348,7 @@ class App(ctk.CTk):
             self._grid_menu.add_command(label=label,
                                         command=lambda w=where: self._grid_snap(w))
         self._grid_menu.add_separator()
+        self._grid_menu.add_command(label="🔍 Zoom Sıfırla", command=self._reset_zoom)
         self._grid_menu.add_command(label="🎮 Canlı Vitrin Aç/Kapat",
                                     command=self._toggle_live_showcase)
         self._grid_menu.add_command(label="✂ Böl", command=self._split_single)
@@ -1430,42 +1406,39 @@ class App(ctk.CTk):
                    command=self._split_batch
                    ).grid(row=0, column=3, sticky="ew", padx=5)
 
-        # Manuel crop satırı: TEK akış — kullanıcı ilk bandın başlangıç
-        # konumunu seçer (ezgif'teki Left/Top kırpması gibi; dialogdaki
-        # "Ortala" butonuyla otomatik ortalamak da tek tık), gerisi otomatik:
-        # sağa 4 parça daha, "Bant sayısı" > 1 ise aşağıya doğru o kadar
-        # bant daha (kaynağa sığdığı kadar) — bkz. manual_crop_with_template.
+        # Araç çubuğu: hızlı efekt paneli, canlı vitrin, bant sayısı.
+        # (Eski "Konumu Seç, Gerisini Otomatik Böl" butonu kaldırıldı —
+        # grid artık önizlemede doğrudan sürüklenip boyutlandırılıyor,
+        # "Böl" gördüğün konumdan kesiyor, ayrı bir buton gereksizdi.)
         btn_f2 = ctk.CTkFrame(main, fg_color="transparent")
         btn_f2.grid(row=2, column=0, sticky="ew", pady=(6, 0))
-        btn_f2.grid_columnconfigure(0, weight=1)
+        btn_f2.grid_columnconfigure(2, weight=1)
 
-        AnimButton(btn_f2,
-                   text="🎯  Konumu Seç, Gerisini Otomatik Böl",
-                   nc=C_BG3, hc=C_INDIGO,
-                   height=36,
+        self._fx_btn = AnimButton(btn_f2, text="🎨  Efektler",
+                   nc=C_BG3, hc=C_INDIGO, height=36,
                    font=ctk.CTkFont("Segoe UI", 12),
-                   command=self._manual_crop
-                   ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+                   command=self._toggle_effects_panel)
+        self._fx_btn.grid(row=0, column=0, padx=(0, 8))
+
+        AnimButton(btn_f2, text="🎮  Canlı Vitrin", height=36,
+                   nc=C_BG3, hc=C_INDIGO,
+                   font=ctk.CTkFont("Segoe UI", 12),
+                   command=self._toggle_live_showcase
+                   ).grid(row=0, column=1)
 
         ctk.CTkLabel(btn_f2, text="Bant sayısı",
                      font=ctk.CTkFont("Segoe UI", 11),
-                     text_color=C_DIM).grid(row=0, column=1, padx=(2, 6))
+                     text_color=C_DIM).grid(row=0, column=3, padx=(2, 6))
 
         self._band_entry = ctk.CTkEntry(btn_f2, fg_color=C_BG3, border_color=C_BORDER,
                                         text_color=C_TEXT, height=36, width=48,
                                         justify="center")
         self._band_entry.insert(0, str(self._cfg.get("multi_band_count", 3)))
-        self._band_entry.grid(row=0, column=2)
+        self._band_entry.grid(row=0, column=4)
         # Bant sayısı değişince ana önizlemedeki bant grid'i canlı yenilensin
         self._band_entry.bind("<KeyRelease>", lambda _e: (
             self._load_preview(self.current_path)
             if self.current_path and os.path.isfile(self.current_path) else None))
-
-        AnimButton(btn_f2, text="🎮", width=44, height=36,
-                   nc=C_BG3, hc=C_INDIGO,
-                   font=ctk.CTkFont("Segoe UI", 13),
-                   command=self._toggle_live_showcase
-                   ).grid(row=0, column=3, padx=(8, 0))
 
         # Status bar
         self._status = StatusBar(main)
@@ -1613,13 +1586,59 @@ class App(ctk.CTk):
         disp.thumbnail((max(1, disp_w), max(1, disp_h)), Image.LANCZOS)
 
         self._grid_scale = gscale
+        prev = self._pv
+        # Aynı dosyanın yeniden önizlemesinde (bant/efekt değişimi) zoom'u koru
+        zoom = prev.get("zoom", 1.0) if prev and prev.get("img_size") == (W, H) else 1.0
+        focus = prev.get("focus", (0.5, 0.5)) if prev and prev.get("img_size") == (W, H) else (0.5, 0.5)
         self._pv = {"img_size": (W, H), "disp": disp, "scale": disp.width / W,
                     "parts": parts, "band_h": th, "bands": bands_fit,
-                    "slice_w": tw_total // parts, "tw_total": tw_total}
+                    "slice_w": tw_total // parts, "tw_total": tw_total,
+                    "zoom": zoom, "focus": focus}
         self._apply_grid_geometry()
         self._draw_grid_overlay()
         self._show_onboarding_tip()
         self._suggest_matching_template(W, H, gscale)
+
+    def _view_crop(self):
+        """Zoom/pan penceresi: gösterilen görselin disp uzayındaki kırpma
+        dikdörtgeni (x0,y0,w,h). zoom=1'de tüm disp."""
+        pv = self._pv
+        dw, dh = pv["disp"].size
+        z = pv.get("zoom", 1.0)
+        cw, ch = dw / z, dh / z
+        fx, fy = pv.get("focus", (0.5, 0.5))
+        x0 = max(0.0, min(dw - cw, fx * dw - cw / 2))
+        y0 = max(0.0, min(dh - ch, fy * dh - ch / 2))
+        return x0, y0, cw, ch
+
+    def _disp_from_event(self, e):
+        """Gösterilen (zoom'lu) görsel koordinatı -> disp (zoom'suz) koordinat.
+        Tüm hit-test/sürükleme bunun üstünden çalışır, böylece zoom'da da
+        grid/metin doğru yerden yakalanır."""
+        pv = self._pv
+        z = pv.get("zoom", 1.0)
+        if z <= 1.0:
+            return e.x, e.y
+        x0, y0, _cw, _ch = self._view_crop()
+        return x0 + e.x / z, y0 + e.y / z
+
+    def _preview_zoom(self, e):
+        pv = self._pv
+        if not pv:
+            return
+        z0 = pv.get("zoom", 1.0)
+        z = z0 * (1.15 if e.delta > 0 else 1 / 1.15)
+        z = max(1.0, min(5.0, z))
+        if abs(z - z0) < 0.001:
+            return
+        # Fare altındaki noktayı sabit tut (odak oraya kaysın)
+        dw, dh = pv["disp"].size
+        dx, dy = self._disp_from_event(e)
+        pv["focus"] = (dx / dw, dy / dh)
+        pv["zoom"] = z
+        if z <= 1.0:
+            pv["focus"] = (0.5, 0.5)
+        self._draw_grid_overlay()
 
     def _suggest_matching_template(self, W, H, gscale):
         """Seçili şablon kaynağa sığmayıp büyütme gerekiyorsa, kaynağa %100
@@ -1736,6 +1755,13 @@ class App(ctk.CTk):
         info = (f"{pv['bands'] * parts} parça ({bant_txt}) · konum {gx},{gy}"
                 f"{scale_txt} · parça {first_w}×{th}px · kaynak {W}×{H}px{patch}"
                 f" · 🖱 sürükle / köşeden boyutlandır")
+        # Zoom penceresi: gösterilen görüntüyü fare odağı etrafından kırp+büyüt
+        z = pv.get("zoom", 1.0)
+        if z > 1.0:
+            x0, y0, cw, ch = self._view_crop()
+            crop = base.crop((int(x0), int(y0), int(x0 + cw), int(y0 + ch)))
+            base = crop.resize(pv["disp"].size, Image.LANCZOS)
+            info += f" · 🔍 %{round(z * 100)} (tekerlek: zoom, sağ tık: sıfırla)"
         batch_count = len(self._batch_files) if self._batch_files else 0
         self._drop.show_image(base, info, batch_count=batch_count)
 
@@ -1744,24 +1770,25 @@ class App(ctk.CTk):
         if not pv:
             return
         s = pv["scale"]
+        dx, dy = self._disp_from_event(e)   # zoom/pan -> disp koordinatı
         gx, gy = self._grid_pos
         gw, gh = pv["grid"]
         # Öncelik 1: metin katmanının üstüne basıldıysa metni sürükle
         tb = pv.get("text_bbox")
-        if tb and tb[0] - 4 <= e.x <= tb[2] + 4 and tb[1] - 4 <= e.y <= tb[3] + 4:
+        if tb and tb[0] - 4 <= dx <= tb[2] + 4 and tb[1] - 4 <= dy <= tb[3] + 4:
             disp = pv["disp"]
             tw_txt, th_txt = tb[2] - tb[0], tb[3] - tb[1]
             denom_x = max(1, disp.width - tw_txt)
             denom_y = max(1, disp.height - th_txt)
-            pv["press"] = ("text", e.x, e.y, tb[0] / denom_x, tb[1] / denom_y,
+            pv["press"] = ("text", dx, dy, tb[0] / denom_x, tb[1] / denom_y,
                            denom_x, denom_y)
             return
         cx, cy = (gx + gw) * s, (gy + gh) * s
-        if abs(e.x - cx) <= 12 and abs(e.y - cy) <= 12:
+        if abs(dx - cx) <= 12 and abs(dy - cy) <= 12:
             # köşe tutamacı: boyutlandırma (delta tabanlı, DPI'dan bağımsız)
-            pv["press"] = ("resize", e.x, e.y, self._grid_scale, max(1.0, gw * s))
+            pv["press"] = ("resize", dx, dy, self._grid_scale, max(1.0, gw * s))
         else:
-            pv["press"] = ("move", e.x, e.y, gx, gy)
+            pv["press"] = ("move", dx, dy, gx, gy)
 
     def _preview_double_click(self, _e=None):
         """Önizlemeye çift tık: gridin olduğu yerden anında böl."""
@@ -1795,10 +1822,152 @@ class App(ctk.CTk):
         self._grid_pos = (max(0, gx), max(0, gy))
         self._draw_grid_overlay()
 
+    def _reset_zoom(self):
+        if self._pv:
+            self._pv["zoom"] = 1.0
+            self._pv["focus"] = (0.5, 0.5)
+            self._draw_grid_overlay()
+
     def _toggle_live_showcase(self):
         self._live_showcase = not self._live_showcase
         if self._pv:
             self._draw_grid_overlay()
+
+    # ── Hızlı efekt paneli (önizleme üstünde, ayarlar sayfası DEĞİL) ──
+    def _toggle_effects_panel(self):
+        if getattr(self, "_fx_open", False):
+            if getattr(self, "_fx_panel", None) is not None:
+                self._fx_panel.place_forget()
+            self._fx_open = False
+            return
+        self._build_effects_panel()
+        # Önizlemenin solundaki koyu boşluğa otur (görsel ortalı; canlı
+        # geri bildirim için önizleme görünür kalır). Genişlik constructor'da.
+        self._fx_panel.place(x=10, y=10, relheight=0.96)
+        self._fx_panel.lift()
+        self._fx_open = True
+
+    def _build_effects_panel(self):
+        """Efekt panelini o anki cfg'den taze kurar. Her değişiklik cfg'ye
+        yazılır, kaydedilir ve önizleme canlı yenilenir (ayarlar sayfasındaki
+        'Kaydet' beklemeye gerek yok — WYSIWYG)."""
+        if getattr(self, "_fx_panel", None) is not None:
+            self._fx_panel.destroy()
+        cfg = self._cfg
+        panel = ctk.CTkScrollableFrame(
+            self._drop, fg_color=C_BG2, corner_radius=12, width=300,
+            scrollbar_button_color=C_BG4, scrollbar_button_hover_color=C_ACCENT)
+        self._fx_panel = panel
+
+        head = ctk.CTkFrame(panel, fg_color="transparent")
+        head.pack(fill="x", pady=(2, 8))
+        ctk.CTkLabel(head, text="🎨  Efektler",
+                     font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
+                     text_color=C_TEXT).pack(side="left", padx=4)
+        AnimButton(head, text="✕", width=30, height=26, nc=C_BG3, hc=C_BG4,
+                   text_color=C_DIM, command=lambda: panel.place_forget()
+                   ).pack(side="right", padx=2)
+
+        def live(_=None):
+            save_config(cfg)
+            if self.current_path and os.path.isfile(self.current_path):
+                self._load_preview(self.current_path)
+
+        def section(title):
+            ctk.CTkLabel(panel, text=title, font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
+                         text_color=C_DIM).pack(anchor="w", padx=6, pady=(10, 2))
+
+        def enable_check(label, key):
+            var = BooleanVar(value=bool(cfg.get(key, False)))
+            def toggle():
+                cfg[key] = bool(var.get())
+                live()
+            ctk.CTkCheckBox(panel, text=label, variable=var,
+                            font=ctk.CTkFont("Segoe UI", 11), text_color=C_TEXT,
+                            fg_color=C_ACCENT, hover_color=C_ACC_LT, checkmark_color=C_BG0,
+                            command=toggle).pack(anchor="w", padx=6, pady=3)
+            return var
+
+        def slider_row(label, key, default, frm=0, to=100):
+            row = ctk.CTkFrame(panel, fg_color="transparent")
+            row.pack(fill="x", padx=6, pady=(0, 2))
+            top = ctk.CTkFrame(row, fg_color="transparent"); top.pack(fill="x")
+            ctk.CTkLabel(top, text=label, font=ctk.CTkFont("Segoe UI", 10),
+                         text_color=C_DIM).pack(side="left")
+            val = ctk.CTkLabel(top, text="", font=ctk.CTkFont("Consolas", 10, weight="bold"),
+                               text_color=C_ACCENT)
+            val.pack(side="right")
+            s = ctk.CTkSlider(row, from_=frm, to=to, button_color=C_ACCENT,
+                              button_hover_color=C_ACC_LT, progress_color=C_ACCENT, fg_color=C_BG4)
+            s.pack(fill="x")
+            raw = cfg.get(key, default)
+            s.set(int(raw) if raw is not None else default)
+            def on(v):
+                cfg[key] = int(float(v)); val.configure(text=str(int(float(v)))); live()
+            s.configure(command=on); val.configure(text=str(int(s.get())))
+            return s
+
+        def color_entry(label, key, default):
+            ctk.CTkLabel(panel, text=label, font=ctk.CTkFont("Segoe UI", 10),
+                         text_color=C_DIM).pack(anchor="w", padx=6)
+            row = ctk.CTkFrame(panel, fg_color="transparent")
+            row.pack(fill="x", padx=6, pady=(0, 4))
+            e = ctk.CTkEntry(row, fg_color=C_BG3, border_color=C_BORDER, text_color=C_TEXT, height=30)
+            e.insert(0, cfg.get(key, default))
+            e.pack(side="left", fill="x", expand=True)
+            def commit(_=None):
+                cfg[key] = e.get().strip() or default; live()
+            e.bind("<FocusOut>", commit); e.bind("<Return>", commit)
+            def pick():
+                c = colorchooser.askcolor(color=cfg.get(key, default))[1]
+                if c:
+                    e.delete(0, "end"); e.insert(0, c); cfg[key] = c; live()
+            AnimButton(row, text="🎨", width=34, height=30, nc=C_BG3, hc=C_BG4,
+                       command=pick).pack(side="left", padx=(4, 0))
+
+        # ── ÖN İŞLEME ──
+        section("ÖN İŞLEME")
+        enable_check("Kenar boşluğunu otomatik kırp (autocrop)", "autocrop_enabled")
+
+        # ── OTOMATİK İYİLEŞTİR ──
+        section("OTOMATİK İYİLEŞTİR")
+        enable_check("Kontrast/doygunluk/keskinlik dengele", "auto_enhance_enabled")
+        slider_row("Yoğunluk", "auto_enhance_intensity", 50)
+
+        # ── BORDER FX ──
+        section("BORDER FX (KENARLIK)")
+        templates = list_border_templates()
+        if templates:
+            enable_check("Kenarlık uygula", "border_fx_enabled")
+            tvar = StringVar(value=cfg.get("border_fx_template", templates[0]) or templates[0])
+            def on_tmpl(v):
+                cfg["border_fx_template"] = v; live()
+            ctk.CTkOptionMenu(panel, values=templates, variable=tvar, command=on_tmpl,
+                              fg_color=C_BG3, button_color=C_ACCENT, button_hover_color=C_ACC_LT,
+                              dropdown_fg_color=C_BG3, dropdown_hover_color=C_BG4,
+                              text_color=C_TEXT).pack(fill="x", padx=6, pady=(0, 4))
+            color_entry("Renk (#RRGGBB)", "border_fx_color", "#8B5CF6")
+            slider_row("Opaklık", "border_fx_opacity", 100)
+            slider_row("Glow", "border_fx_glow", 35)
+        else:
+            ctk.CTkLabel(panel, text="Border Templates klasöründe PNG yok.",
+                         font=ctk.CTkFont("Segoe UI", 10), text_color=C_ERROR).pack(anchor="w", padx=6, pady=4)
+
+        # ── METİN KATMANI ──
+        section("METİN KATMANI")
+        enable_check("Metin ekle", "text_overlay_enabled")
+        ctk.CTkLabel(panel, text="Metin (önizlemede sürüklenebilir)",
+                     font=ctk.CTkFont("Segoe UI", 10), text_color=C_DIM).pack(anchor="w", padx=6)
+        te = ctk.CTkEntry(panel, fg_color=C_BG3, border_color=C_BORDER, text_color=C_TEXT,
+                          height=30, placeholder_text="Başlık / imza")
+        te.insert(0, cfg.get("text_overlay_text", ""))
+        te.pack(fill="x", padx=6, pady=(0, 4))
+        def commit_text(_=None):
+            cfg["text_overlay_text"] = te.get().strip(); live()
+        te.bind("<FocusOut>", commit_text); te.bind("<Return>", commit_text)
+        color_entry("Renk (#RRGGBB)", "text_overlay_color", "#FFFFFF")
+        slider_row("Boyut", "text_overlay_size", 6, frm=1, to=30)
+        slider_row("Opaklık", "text_overlay_opacity", 100)
 
     def _compose_pip_showcase(self, base):
         """Grid'in mevcut konumundaki parçaları Steam boşluklarıyla dizen
@@ -1843,16 +2012,17 @@ class App(ctk.CTk):
             return
         mode = pv["press"][0]
         W, H = pv["img_size"]
+        ex, ey = self._disp_from_event(e)   # zoom/pan -> disp koordinatı
         if mode == "text":
             _, px, py, x0_pct, y0_pct, denom_x, denom_y = pv["press"]
-            xp = max(0.0, min(1.0, x0_pct + (e.x - px) / denom_x))
-            yp = max(0.0, min(1.0, y0_pct + (e.y - py) / denom_y))
+            xp = max(0.0, min(1.0, x0_pct + (ex - px) / denom_x))
+            yp = max(0.0, min(1.0, y0_pct + (ey - py) / denom_y))
             self._cfg["text_overlay_custom_pos"] = [round(xp, 4), round(yp, 4)]
             self._draw_grid_overlay()
             return
         if mode == "resize":
             _, px, py, scale0, gw_disp0 = pv["press"]
-            new_scale = scale0 * (1 + (e.x - px) / gw_disp0)
+            new_scale = scale0 * (1 + (ex - px) / gw_disp0)
             # kaynağa sığsın: konum sabit, köşe içeride kalmalı
             gx, gy = self._grid_pos
             max_scale = min((W - gx) / pv["tw_total"],
@@ -1867,8 +2037,8 @@ class App(ctk.CTk):
         _, px, py, ox, oy = pv["press"]
         s = pv["scale"] or 1.0
         gw, gh = pv["grid"]
-        gx = int(max(0, min(W - gw, ox + (e.x - px) / s)))
-        gy = int(max(0, min(H - gh, oy + (e.y - py) / s)))
+        gx = int(max(0, min(W - gw, ox + (ex - px) / s)))
+        gy = int(max(0, min(H - gh, oy + (ey - py) / s)))
         if (gx, gy) != self._grid_pos:
             self._grid_pos = (gx, gy)
             self._draw_grid_overlay()
@@ -2100,32 +2270,6 @@ class App(ctk.CTk):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    def _manual_crop(self):
-        if not self.current_path or os.path.isdir(self.current_path):
-            self._status.error("Manuel crop için tek resim seç")
-            return
-        try:
-            band_count = max(1, int(self._band_entry.get().strip()))
-        except ValueError:
-            band_count = 1
-        self._cfg["multi_band_count"] = band_count
-        save_config(self._cfg)
-
-        created = manual_crop_with_template(
-            self, self.current_path, self.output_dir, self.template, self._cfg, band_count)
-        if created:
-            if band_count > 1 and self.template["mode"] == "uniform":
-                made_bands = len(created) // self.template["parts"]
-                if made_bands < band_count:
-                    self._status.ok(
-                        f"Manuel: {len(created)} parça oluşturuldu ({made_bands}/{band_count} bant — "
-                        f"kaynağın boyu daha fazlasına yetmedi) ✓")
-                else:
-                    self._status.ok(f"Manuel: {len(created)} parça oluşturuldu ({made_bands} bant) ✓")
-            else:
-                self._status.ok(f"Manuel: {len(created)} parça oluşturuldu ✓")
-            self._show_split_preview(created)
-
     def _open_output_dir(self):
         open_folder(self.output_dir)
 
@@ -2281,28 +2425,6 @@ class App(ctk.CTk):
                    command=self._open_output_dir).pack(side="left", fill="x", expand=True, padx=(0, 6))
         AnimButton(btns, text="Kapat", height=34,
                    command=win.destroy).pack(side="left", fill="x", expand=True, padx=(6, 0))
-
-    def _steam_api_after_split(self, file_paths: list[str]):
-        def worker():
-            ok, msg = self._prepare_steam_api_upload(file_paths)
-            color = C_SUCCESS if ok else C_ERROR
-            self.after(0, lambda: self._status.set(msg, color, color))
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _prepare_steam_api_upload(self, file_paths: list[str]):
-        errors = steam_api_config_errors(self._cfg)
-        if errors:
-            return False, "Steam API config eksik: " + ", ".join(errors)
-        try:
-            details = fetch_steam_published_file_details(
-                self._cfg.get("steam_published_file_id", "").strip())
-            if details and str(details.get("consumer_app_id", "")) not in ("", str(self._cfg.get("steam_app_id", "")).strip()):
-                return False, "Published file app id config ile eşleşmiyor"
-        except Exception as e:
-            return False, f"Steam API doğrulama hatası: {e}"
-
-        manifest = build_steam_upload_manifest(file_paths, self._cfg, self.output_dir, self.template)
-        return False, f"Direkt Web API upload yok; manifest hazır: {os.path.basename(manifest)}"
 
     def _prepare_steam_community_manifest(self, file_paths: list[str]) -> str:
         return build_steam_upload_manifest(file_paths, self._cfg, self.output_dir, self.template)

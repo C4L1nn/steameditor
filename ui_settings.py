@@ -15,18 +15,14 @@ from ui_theme import (
     C_BORDER, C_DIM, C_ERROR, C_SUCCESS, C_TEXT,
     AnimButton,
 )
-from core import _TEXT_OVERLAY_POSITIONS, list_border_templates
 from config import (
     PROFILE_KEYS,
     STEAM_CONSOLE_SNIPPETS,
-    STEAM_DIRECT_UPLOAD_NOTE,
     STEAM_HELPER_LINKS,
     STEAM_UPLOAD_STEPS,
     TEMPLATES,
     TEMPLATE_SNIPPET_HINTS,
-    _masked_key,
     clear_history,
-    fetch_steam_published_file_details,
     load_history,
     load_profiles,
     load_projects,
@@ -34,7 +30,6 @@ from config import (
     save_custom_presets,
     save_profiles,
     save_projects,
-    steam_api_config_errors,
 )
 
 
@@ -46,14 +41,15 @@ class SettingsPage(ctk.CTkFrame):
     yeni OS penceresi açılmaz. Her sekme açılışta sıfırdan kurulur (eski
     pop-up'ların her açılışta taze veriyle kurulması gibi)."""
 
+    # Efektler artık ayrı sekme değil — ana önizleme üstündeki "🎨 Efektler"
+    # hızlı panelinde (bkz. App._toggle_effects_panel). Steam API sekmesi de
+    # kaldırıldı (gerçek upload yapmıyordu; "Community Upload" esas yükleyici).
     TABS = [
         ("Genel", "⚙"),
-        ("Efektler", "🎨"),
         ("Şablonlar", "🧩"),
         ("Profiller", "🗂"),
         ("Projeler", "📁"),
         ("Geçmiş", "🕘"),
-        ("Steam API", "☁"),
         ("Notlar", "📋"),
     ]
 
@@ -123,12 +119,10 @@ class SettingsPage(ctk.CTkFrame):
             w.destroy()
         builder = {
             "Genel": self._build_general,
-            "Efektler": self._build_effects,
             "Şablonlar": self._build_templates,
             "Profiller": self._build_profiles,
             "Projeler": self._build_projects,
             "Geçmiş": self._build_history,
-            "Steam API": self._build_steam_api,
             "Notlar": self._build_notes,
         }[name]
         builder(self._content)
@@ -262,7 +256,7 @@ class SettingsPage(ctk.CTkFrame):
                    height=38, text_color=C_BG0,
                    command=save).pack(fill="x", padx=4, pady=(14, 4))
 
-    # ── Efektler yardımcıları ────────────────────────────────
+    # ── Slider yardımcısı (Genel sekmesindeki çıktı kalitesi için) ──
     def _slider_row(self, p, label, cfg, cfg_key, default, from_=0, to=100, fmt="{}%"):
         frame = ctk.CTkFrame(p, fg_color="transparent")
         frame.pack(fill="x", padx=4, pady=6)
@@ -287,223 +281,6 @@ class SettingsPage(ctk.CTkFrame):
         slider.configure(command=update)
         update(slider.get())
         return slider
-
-    def _sep_line(self, p):
-        ctk.CTkFrame(p, height=1, fg_color=C_BORDER).pack(fill="x", pady=(10, 10))
-
-    # ── Efektler (Border FX + Metin Katmanı + Otomatik İyileştir) ──
-    def _build_effects(self, p):
-        cfg = self.app._cfg
-        ctk.CTkLabel(p, text="Efektler",
-                     font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
-                     text_color=C_TEXT).pack(anchor="w", padx=4, pady=(4, 6))
-        ctk.CTkLabel(p, text="Split öncesi tüm görsele/parçaya birlikte uygulanır: "
-                             "önce iyileştirme, sonra border, en üstte metin.",
-                     font=ctk.CTkFont("Segoe UI", 10), text_color=C_DIM,
-                     wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 12))
-
-        # ── Border FX ──
-        ctk.CTkLabel(p, text="BORDER FX", font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
-                     text_color=C_DIM).pack(anchor="w", padx=4, pady=(0, 6))
-
-        templates = list_border_templates()
-        border_enabled_var = template_var = color_entry = opacity_slider = glow_slider = None
-
-        if not templates:
-            ctk.CTkLabel(p, text="Border Templates klasöründe PNG bulunamadı.",
-                         font=ctk.CTkFont("Segoe UI", 11),
-                         text_color=C_ERROR).pack(anchor="w", padx=4, pady=8)
-        else:
-            if cfg.get("border_fx_template") not in templates:
-                cfg["border_fx_template"] = templates[0]
-
-            border_enabled_var = BooleanVar(value=bool(cfg.get("border_fx_enabled", False)))
-            ctk.CTkCheckBox(
-                p, text="Border efektini aktif et",
-                variable=border_enabled_var, font=ctk.CTkFont("Segoe UI", 11),
-                text_color=C_TEXT, fg_color=C_ACCENT, hover_color=C_ACC_LT,
-                checkmark_color=C_BG0,
-            ).pack(anchor="w", padx=4, pady=(0, 12))
-
-            ctk.CTkLabel(p, text="Template", font=ctk.CTkFont("Segoe UI", 10),
-                         text_color=C_DIM).pack(anchor="w", padx=4)
-            template_var = StringVar(value=cfg.get("border_fx_template", templates[0]))
-            ctk.CTkOptionMenu(
-                p, values=templates, variable=template_var,
-                fg_color=C_BG3, button_color=C_ACCENT, button_hover_color=C_ACC_LT,
-                dropdown_fg_color=C_BG3, dropdown_hover_color=C_BG4,
-                text_color=C_TEXT,
-                font=ctk.CTkFont("Segoe UI", 11, weight="bold")).pack(fill="x", padx=4, pady=(2, 10))
-
-            ctk.CTkLabel(p, text="Renk (#RRGGBB)", font=ctk.CTkFont("Segoe UI", 10),
-                         text_color=C_DIM).pack(anchor="w", padx=4)
-            color_entry = ctk.CTkEntry(p, fg_color=C_BG3, border_color=C_BORDER,
-                                       text_color=C_TEXT, height=32)
-            color_entry.insert(0, cfg.get("border_fx_color", "#8B5CF6"))
-            color_entry.pack(fill="x", padx=4, pady=(2, 10))
-
-            swatches = [
-                "#FF6B00", "#F97316", "#FACC15", "#22C55E",
-                "#22D3EE", "#3B82F6", "#8B5CF6", "#EC4899",
-                "#EF4444", "#FFFFFF", "#111827", "#94A3B8",
-            ]
-            swatch_f = ctk.CTkFrame(p, fg_color="transparent")
-            swatch_f.pack(fill="x", padx=4, pady=(0, 10))
-            preview_dot = ctk.CTkFrame(swatch_f, width=28, height=28,
-                                       fg_color=cfg.get("border_fx_color", "#8B5CF6"),
-                                       corner_radius=14)
-            preview_dot.pack(side="left", padx=(0, 8))
-            preview_dot.pack_propagate(False)
-
-            def set_color(value):
-                color_entry.delete(0, "end")
-                color_entry.insert(0, value)
-                preview_dot.configure(fg_color=value)
-
-            def sync_color_preview(_=None):
-                color = color_entry.get().strip()
-                if len(color.lstrip("#")) in (3, 6):
-                    preview_dot.configure(fg_color=color)
-
-            def pick_any_color():
-                initial = color_entry.get().strip() or "#8B5CF6"
-                _, picked = colorchooser.askcolor(color=initial, title="Border rengini seç")
-                if picked:
-                    set_color(picked.upper())
-
-            for color in swatches:
-                ctk.CTkButton(
-                    swatch_f, text="", width=24, height=24, corner_radius=12,
-                    fg_color=color, hover_color=color,
-                    border_width=1, border_color=C_BORDER,
-                    command=lambda c=color: set_color(c)
-                ).pack(side="left", padx=3)
-            color_entry.bind("<KeyRelease>", sync_color_preview)
-
-            AnimButton(p, text="Tüm renklerden seç",
-                       nc=C_BG3, hc=C_BG4, height=32, text_color=C_TEXT,
-                       command=pick_any_color).pack(fill="x", padx=4, pady=(0, 10))
-
-            opacity_slider = self._slider_row(p, "Opaklik", cfg, "border_fx_opacity", 100)
-            glow_slider = self._slider_row(p, "Glow", cfg, "border_fx_glow", 35)
-
-        self._sep_line(p)
-
-        # ── Metin Katmanı ──
-        ctk.CTkLabel(p, text="METİN KATMANI", font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
-                     text_color=C_DIM).pack(anchor="w", padx=4, pady=(0, 6))
-
-        text_enabled_var = BooleanVar(value=bool(cfg.get("text_overlay_enabled", False)))
-        ctk.CTkCheckBox(
-            p, text="Metin katmanını aktif et",
-            variable=text_enabled_var, font=ctk.CTkFont("Segoe UI", 11),
-            text_color=C_TEXT, fg_color=C_ACCENT, hover_color=C_ACC_LT,
-            checkmark_color=C_BG0,
-        ).pack(anchor="w", padx=4, pady=(0, 10))
-
-        ctk.CTkLabel(p, text="Metin", font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=C_DIM).pack(anchor="w", padx=4)
-        text_entry = ctk.CTkEntry(p, fg_color=C_BG3, border_color=C_BORDER,
-                                  text_color=C_TEXT, height=32,
-                                  placeholder_text="Başlık / imza metni")
-        text_entry.insert(0, cfg.get("text_overlay_text", ""))
-        text_entry.pack(fill="x", padx=4, pady=(2, 10))
-
-        row1 = ctk.CTkFrame(p, fg_color="transparent")
-        row1.pack(fill="x", padx=4, pady=(0, 10))
-        col_a = ctk.CTkFrame(row1, fg_color="transparent")
-        col_a.pack(side="left", fill="x", expand=True, padx=(0, 4))
-        ctk.CTkLabel(col_a, text="Renk (#RRGGBB)", font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=C_DIM).pack(anchor="w")
-        text_color_entry = ctk.CTkEntry(col_a, fg_color=C_BG3, border_color=C_BORDER,
-                                        text_color=C_TEXT, height=32)
-        text_color_entry.insert(0, cfg.get("text_overlay_color", "#FFFFFF"))
-        text_color_entry.pack(fill="x", pady=(2, 0))
-
-        col_b = ctk.CTkFrame(row1, fg_color="transparent")
-        col_b.pack(side="left", fill="x", expand=True, padx=(4, 0))
-        ctk.CTkLabel(col_b, text="Konum", font=ctk.CTkFont("Segoe UI", 10),
-                     text_color=C_DIM).pack(anchor="w")
-        position_var = StringVar(value=cfg.get("text_overlay_position", "Alt Orta"))
-        ctk.CTkOptionMenu(
-            col_b, values=list(_TEXT_OVERLAY_POSITIONS), variable=position_var,
-            fg_color=C_BG3, button_color=C_ACCENT, button_hover_color=C_ACC_LT,
-            dropdown_fg_color=C_BG3, dropdown_hover_color=C_BG4,
-            text_color=C_TEXT, font=ctk.CTkFont("Segoe UI", 11, weight="bold")
-        ).pack(fill="x", pady=(2, 0))
-
-        text_size_slider = self._slider_row(p, "Boyut", cfg, "text_overlay_size", 6,
-                                            from_=1, to=30, fmt="{}%")
-        text_opacity_slider = self._slider_row(p, "Opaklik", cfg, "text_overlay_opacity", 100)
-        ctk.CTkLabel(p, text="İpucu: metni ana önizlemede fareyle tutup istediğin yere "
-                             "sürükleyebilirsin (serbest konum).",
-                     font=ctk.CTkFont("Segoe UI", 9), text_color=C_DIM,
-                     wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 4))
-
-        self._sep_line(p)
-
-        # ── Ön İşleme (Autocrop) ──
-        ctk.CTkLabel(p, text="ÖN İŞLEME", font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
-                     text_color=C_DIM).pack(anchor="w", padx=4, pady=(0, 6))
-        autocrop_var = BooleanVar(value=bool(cfg.get("autocrop_enabled", False)))
-        ctk.CTkCheckBox(
-            p, text="Kenar boşluğunu otomatik kırp (şeffaf/tek renk çerçeve)",
-            variable=autocrop_var, font=ctk.CTkFont("Segoe UI", 11),
-            text_color=C_TEXT, fg_color=C_ACCENT, hover_color=C_ACC_LT,
-            checkmark_color=C_BG0,
-        ).pack(anchor="w", padx=4, pady=(0, 4))
-        ctk.CTkLabel(p, text="Bölmeden önce görselin etrafındaki boş alan atılır "
-                             "(ezgif'teki 'trim transparent pixels' gibi).",
-                     font=ctk.CTkFont("Segoe UI", 10), text_color=C_DIM,
-                     wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 8))
-
-        self._sep_line(p)
-
-        # ── Otomatik İyileştir ──
-        ctk.CTkLabel(p, text="OTOMATİK İYİLEŞTİR", font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
-                     text_color=C_DIM).pack(anchor="w", padx=4, pady=(0, 6))
-        ctk.CTkLabel(p, text="Kontrast, doygunluk, parlaklık ve keskinliği tek ayarla dengeler.",
-                     font=ctk.CTkFont("Segoe UI", 10), text_color=C_DIM,
-                     wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 8))
-
-        enhance_enabled_var = BooleanVar(value=bool(cfg.get("auto_enhance_enabled", False)))
-        ctk.CTkCheckBox(
-            p, text="Otomatik iyileştirmeyi aktif et",
-            variable=enhance_enabled_var, font=ctk.CTkFont("Segoe UI", 11),
-            text_color=C_TEXT, fg_color=C_ACCENT, hover_color=C_ACC_LT,
-            checkmark_color=C_BG0,
-        ).pack(anchor="w", padx=4, pady=(0, 10))
-
-        enhance_slider = self._slider_row(p, "Yoğunluk", cfg, "auto_enhance_intensity", 50)
-
-        def save_all():
-            if border_enabled_var is not None:
-                cfg["border_fx_enabled"] = bool(border_enabled_var.get())
-                cfg["border_fx_template"] = template_var.get()
-                cfg["border_fx_color"] = color_entry.get().strip() or "#8B5CF6"
-                cfg["border_fx_opacity"] = int(opacity_slider.get())
-                cfg["border_fx_glow"] = int(glow_slider.get())
-            cfg["text_overlay_enabled"] = bool(text_enabled_var.get())
-            cfg["text_overlay_text"] = text_entry.get().strip()
-            cfg["text_overlay_color"] = text_color_entry.get().strip() or "#FFFFFF"
-            # Menüden konum seçmek, önizlemede sürüklenerek belirlenmiş serbest
-            # konumu (custom_pos) sıfırlar — iki kaynak yarışmasın.
-            if cfg.get("text_overlay_position") != position_var.get():
-                cfg.pop("text_overlay_custom_pos", None)
-            cfg["text_overlay_position"] = position_var.get()
-            cfg["text_overlay_size"] = int(text_size_slider.get())
-            cfg["text_overlay_opacity"] = int(text_opacity_slider.get())
-            cfg["auto_enhance_enabled"] = bool(enhance_enabled_var.get())
-            cfg["auto_enhance_intensity"] = int(enhance_slider.get())
-            cfg["autocrop_enabled"] = bool(autocrop_var.get())
-            save_config(cfg)
-            if self.app.current_path and os.path.isfile(self.app.current_path):
-                self.app._load_preview(self.app.current_path)
-            self.app._status.ok("Efektler kaydedildi")
-
-        AnimButton(p, text="Kaydet", variant="accent",
-                   height=38, text_color=C_BG0,
-                   command=save_all).pack(fill="x", padx=4, pady=(14, 4))
 
     # ── Şablonlar ──────────────────────────────────────────
     def _build_templates(self, p):
@@ -1117,89 +894,6 @@ class SettingsPage(ctk.CTkFrame):
             AnimButton(btns, text="Sil", nc=C_BG4, hc=C_BG5, height=28, text_color=C_ERROR,
                        command=lambda n=name: delete_project(n)
                        ).pack(side="left", fill="x", expand=True, padx=(4, 0))
-
-    # ── Steam API ──────────────────────────────────────────
-    def _build_steam_api(self, p):
-        cfg = self.app._cfg
-        ctk.CTkLabel(p, text="Steam API Kontrol",
-                     font=ctk.CTkFont("Segoe UI", 14, weight="bold"),
-                     text_color=C_TEXT).pack(anchor="w", padx=4, pady=(4, 6))
-        ctk.CTkLabel(p, text=STEAM_DIRECT_UPLOAD_NOTE,
-                     font=ctk.CTkFont("Segoe UI", 10), text_color=C_DIM,
-                     wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 12))
-
-        info = (
-            f"API Key: {_masked_key(cfg.get('steam_api_key', '')) or '(boş)'}\n"
-            f"App ID: {cfg.get('steam_app_id', '') or '(boş)'}\n"
-            f"Published File ID: {cfg.get('steam_published_file_id', '') or '(boş)'}\n"
-            f"Son çıktı: {len(self.app._last_outputs)} dosya"
-        )
-        ctk.CTkLabel(p, text=info, font=ctk.CTkFont("Consolas", 11),
-                     text_color=C_TEXT, justify="left").pack(anchor="w", padx=4, pady=8)
-
-        output = Text(p, bg=C_BG2, fg=C_TEXT, insertbackground=C_ACCENT,
-                      font=("Consolas", 10), wrap="word", relief="flat",
-                      padx=10, pady=10, height=9)
-        output.pack(fill="both", expand=True, padx=4, pady=8)
-        output.insert("1.0", "Hazır.\n")
-        output.configure(state="disabled")
-
-        def write(msg):
-            output.configure(state="normal")
-            output.insert("end", msg + "\n")
-            output.see("end")
-            output.configure(state="disabled")
-
-        def validate():
-            write("Config kontrol ediliyor...")
-            errors = steam_api_config_errors(cfg)
-            if errors:
-                write("Eksik: " + ", ".join(errors))
-                return
-            try:
-                details = fetch_steam_published_file_details(
-                    cfg.get("steam_published_file_id", "").strip())
-                if not details:
-                    write("Published file bulunamadı veya cevap boş.")
-                    return
-                title = details.get("title", "(başlıksız)")
-                app_id = details.get("consumer_app_id", "?")
-                write(f"Bulundu: {title} | consumer_app_id={app_id}")
-            except Exception as e:
-                write(f"Steam API hatası: {e}")
-
-        def prepare_manifest():
-            files = self.app._last_outputs
-            if not files:
-                write("Son çıktı listesi boş; önce split işlemi yap.")
-                return
-            ok, msg = self.app._prepare_steam_api_upload(files)
-            write(msg)
-            if not ok:
-                write("Direkt upload için SteamCMD veya Steamworks SDK entegrasyonu gerekir.")
-
-        def run_community():
-            files = self.app._last_outputs
-            if not files:
-                write("Son çıktı listesi boş; önce split işlemi yap.")
-                return
-            self.app._run_steam_community_upload(files)
-            write("Steam Community uploader başlatıldı.")
-
-        btns = ctk.CTkFrame(p, fg_color="transparent")
-        btns.pack(fill="x", padx=4, pady=(0, 4))
-        AnimButton(btns, text="API Doğrula", variant="accent",
-                   height=34, text_color=C_BG0,
-                   command=validate).pack(side="left", fill="x", expand=True, padx=(0, 6))
-        AnimButton(btns, text="Manifest Hazırla",
-                   height=34,
-                   command=prepare_manifest).pack(side="left", fill="x", expand=True, padx=6)
-        AnimButton(btns, text="Community Upload",
-                   height=34,
-                   command=run_community).pack(side="left", fill="x", expand=True, padx=6)
-        AnimButton(btns, text="Ayarlar",
-                   height=34,
-                   command=lambda: self.open_tab("Genel")).pack(side="left", fill="x", expand=True, padx=(6, 0))
 
     # ── Notlar ─────────────────────────────────────────────
     def _autosave_notes(self):
