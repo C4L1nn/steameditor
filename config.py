@@ -16,33 +16,35 @@ _log = get_logger("config")
 #   ŞABLONLAR (3 temel vitrin)
 # ==========================================================
 
+# Kullanıcının doğrulanmış Steam akışındaki 3 temel vitrin — bunlar
+# varsayılan kalır, gerisi "özel şablon" ile oluşturulur.
 TEMPLATES = [
     {
-        "name": "Workshop 5-Parça (Otomatik Boyut)",
+        "name": "Atölye Vitrini 5-Parça (150×1250)",
         "mode": "uniform",       # 5 dikey parça (151,151,151,151,150)
         "width": 754,            # hedef canvas — Steam vitrini kesim noktaları
                                  # 151-302-453-604 (elle doğrulanmış akış; 750
                                  # kullanılırsa vitrinde hiza kayması oluşur)
         "height": 1250,
         "parts": 5,
-        "patch": True,
+        "patch": True,           # son byte 0x21 (hexed.it adımının otomatiği)
         "prefix": "work"
     },
     {
         "name": "Çizim Vitrini 2-Parça (506 + 100)",
         "mode": "multi",         # her parça farklı boyut
         "parts": [
-            {"width": 506, "height": 944},
-            {"width": 100, "height": 944},
+            {"width": 506, "height": 1000},
+            {"width": 100, "height": 1000},
         ],
         "patch": False,
         "prefix": "art"
     },
     {
-        "name": "Ekran Görüntüsü Tek Parça (650x850)",
+        "name": "Ekran Görüntüsü Tek Parça (650×1000)",
         "mode": "single",        # tek çıktı
         "width": 650,
-        "height": 850,
+        "height": 1000,
         "patch": False,
         "prefix": "shot"
     },
@@ -322,7 +324,7 @@ def clear_recovery():
 def load_config() -> dict:
     """steam_splitter_config.json'u dict olarak döner."""
     defaults = {
-        "default_preset": "Workshop 5-Parça (Otomatik Boyut)",
+        "default_preset": "Atölye Vitrini 5-Parça (150×1250)",
         "output_dir": "",
         "last_input_dir": "",
         "open_output_after_process": False,

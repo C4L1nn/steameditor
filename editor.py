@@ -1565,12 +1565,15 @@ class App(ctk.CTk):
                 img.seek(0)
             img = autocrop_borders(img.convert("RGBA"), self._cfg)
             tmpl = self.template
-            # Uniform + kaynak grid'den büyükse: interaktif önizleme (grid
+            # Uniform + kaynak yeterince büyükse: interaktif önizleme (grid
             # fareyle sürüklenir, Böl o konumdan NATIVE keser). GIF'lerde de
-            # geçerli — ilk kare üstünde konumlanır, tüm kareler aynı yerden
-            # kesilir (cover-crop büyütmesi/kırpması yok).
+            # geçerli. Kaynak şablondan BİRKAÇ px küçükse de grid çalışır —
+            # setup ölçeği otomatik sığdırır (örn. 750 genişlik / 754 şablon
+            # -> %99.5 seçim), kesimde bölge şablon boyutuna ölçeklenir;
+            # görünmez bir fark, kullanıcı hiçbir şey ayarlamak zorunda kalmaz.
             if (tmpl.get("mode") == "uniform"
-                    and img.width >= tmpl["width"] and img.height >= tmpl["height"]):
+                    and img.width >= tmpl["width"] * 0.75
+                    and img.height >= tmpl["height"] * 0.75):
                 self._setup_interactive_preview(img)
                 return
             self._pv = None
