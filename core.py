@@ -645,12 +645,18 @@ def _save_animated_gif(frames_rgba, durations, outpath: str, patch: bool = False
 
 
 def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = None,
-                     name_override: str | None = None):
+                     name_override: str | None = None,
+                     preset_origin: tuple[int, int] | None = None,
+                     region_scale: float = 1.0, band_count: int = 1):
     """
     Animasyonlu GIF’i frame-by-frame split eder.
     uniform, multi ve single modların tamamında animasyonlu GIF üretir.
     name_override verilirse çıktı adı kaynak dosya adı yerine bunu kullanır
     (toplu işlemde aynı isimli farklı kaynakların üstüne yazmasını önlemek için).
+    preset_origin verilirse (uniform): interaktif grid'in konumundan NATIVE
+    kesim yapılır — kaynak cover-crop ile büyütülmez/kırpılmaz; bölge
+    (region_scale ile seçilmişse) şablon boyutuna ölçeklenir ve dilimlenir.
+    Statik görsellerdeki grid akışıyla birebir aynı davranış.
     """
     os.makedirs(outdir, exist_ok=True)
     created_files = []
@@ -686,12 +692,50 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
         target_w = template["width"]
         target_h = template["height"]
         parts = template["parts"]
+        bounds = uniform_slice_bounds(target_w, parts)
+
+        if preset_origin is not None:
+            # İnteraktif grid yolu: NATIVE kesim (statik akışla birebir).
+            # Efektler önce TAM kareye uygulanır (WYSIWYG — önizleme de
+            # efekt sonrası tam görsel üstünde çiziliyor).
+            rs = max(0.05, float(region_scale))
+            bands_eff = max(1, band_count)
+            gw = int(round(target_w * rs))
+            gh = int(round(target_h * bands_eff * rs))
+            W, H = frames[0].size
+            bx = max(0, min(W - gw, int(preset_origin[0])))
+            by = max(0, min(H - gh, int(preset_origin[1])))
+            target_size = (target_w, target_h * bands_eff)
+
+            regions = []
+            for f in frames:
+                f = _apply_effects_pipeline(f, cfg)
+                r = f.crop((bx, by, bx + gw, by + gh))
+                if r.size != target_size:
+                    r = r.resize(target_size, Image.LANCZOS)
+                regions.append(r)
+
+            idx = 1
+            for band in range(bands_eff):
+                y1 = band * target_h
+                for x1, x2 in bounds:
+                    part_frames = [r.crop((x1, y1, x2, y1 + target_h)) for r in regions]
+                    outpath = os.path.join(outdir, f"{prefix}_{base}_{idx:02}.gif")
+                    _save_animated_gif(part_frames, durations, outpath, False)
+                    optimize_gif_file(outpath, gif_lossy, gif_colors)
+                    if template.get("patch", False):
+                        patch_gif_trailing_byte(outpath)
+                    created_files.append(outpath)
+                    idx += 1
+            _log.info(f"[GIF SPLIT] {os.path.basename(path)} -> {len(created_files)} "
+                      f"animasyonlu parca (grid: {bx},{by} · %{round(rs*100)})")
+            return created_files
 
         # Sabit target_w x target_h canvas'a cover-crop — process_image
         # ve multi/single modlarıyla tutarlı (bkz. resize_cover).
         scaled = [_apply_effects_pipeline(resize_cover(f, target_w, target_h), cfg) for f in frames]
 
-        for i, (x1, x2) in enumerate(uniform_slice_bounds(target_w, parts)):
+        for i, (x1, x2) in enumerate(bounds):
             part_frames = [fr.crop((x1, 0, x2, target_h)) for fr in scaled]
             outpath = os.path.join(outdir, f"{prefix}_{base}_{i+1:02}.gif")
             _save_animated_gif(part_frames, durations, outpath, False)

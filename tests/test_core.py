@@ -605,6 +605,43 @@ def test_split_gif_frames_uniform_produces_animated_parts(tmp_path):
         assert frame_count == 3
 
 
+def test_split_gif_frames_grid_native_cut_no_upscale(tmp_path):
+    """İnteraktif grid yolu (preset_origin): kareler cover-crop ile
+    BÜYÜTÜLMEDEN, grid konumundan native kesilmeli. Kaynakta (60,80)
+    konumuna yeşil bir blok koyup grid'i oraya yerleştiriyoruz — parçada
+    aynı yeşil birebir görünmeli."""
+    frames = []
+    for i in range(3):
+        f = Image.new("RGB", (300, 400), (10, 10, 30))
+        from PIL import ImageDraw as _ID
+        _ID.Draw(f).rectangle((60, 80, 159, 279), fill=(0, 200, 0))
+        frames.append(f)
+    src = tmp_path / "src.gif"
+    frames[0].save(src, save_all=True, append_images=frames[1:],
+                   duration=[80] * 3, loop=0)
+    template = {"name": "t", "mode": "uniform", "width": 100, "height": 200,
+                "parts": 2, "patch": False, "prefix": "t"}
+    created = core.split_gif_frames(str(src), str(tmp_path), template, None,
+                                    preset_origin=(60, 80))
+    assert len(created) == 2
+    p1 = Image.open(created[0])
+    assert p1.size == (50, 200)
+    assert p1.convert("RGB").getpixel((25, 100)) == (0, 200, 0)
+
+
+def test_split_gif_frames_grid_multi_band(tmp_path):
+    frames = [Image.new("RGB", (200, 500), (10, 10, 30)) for _ in range(2)]
+    src = tmp_path / "src.gif"
+    frames[0].save(src, save_all=True, append_images=frames[1:],
+                   duration=[80, 80], loop=0)
+    template = {"name": "t", "mode": "uniform", "width": 100, "height": 200,
+                "parts": 2, "patch": False, "prefix": "t"}
+    created = core.split_gif_frames(str(src), str(tmp_path), template, None,
+                                    preset_origin=(0, 0), band_count=2)
+    assert len(created) == 4  # 2 bant x 2 parça
+    assert all(Image.open(p).size in ((50, 200),) for p in created)
+
+
 def test_split_gif_frames_name_override_used_for_output_filename(tmp_path):
     frames = _make_gif_frames(transparent=False)
     src = tmp_path / "any_name.gif"

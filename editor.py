@@ -1565,10 +1565,11 @@ class App(ctk.CTk):
                 img.seek(0)
             img = autocrop_borders(img.convert("RGBA"), self._cfg)
             tmpl = self.template
-            # Uniform + statik görsel + kaynak grid'den büyükse: interaktif
-            # önizleme (grid fareyle sürüklenir, Böl o konumdan keser).
+            # Uniform + kaynak grid'den büyükse: interaktif önizleme (grid
+            # fareyle sürüklenir, Böl o konumdan NATIVE keser). GIF'lerde de
+            # geçerli — ilk kare üstünde konumlanır, tüm kareler aynı yerden
+            # kesilir (cover-crop büyütmesi/kırpması yok).
             if (tmpl.get("mode") == "uniform"
-                    and not path.lower().endswith(".gif")
                     and img.width >= tmpl["width"] and img.height >= tmpl["height"]):
                 self._setup_interactive_preview(img)
                 return
@@ -1576,10 +1577,14 @@ class App(ctk.CTk):
             self._grid_pos = None
             bands = self._current_band_count()
             preview = render_template_preview(img, tmpl, self._cfg, band_count=bands)
+            summary = template_output_summary(img, tmpl, band_count=bands)
+            # Kaynak şablondan küçükse büyütme kaçınılmaz — sessizce yapma, söyle
+            if (tmpl.get("mode") == "uniform"
+                    and (img.width < tmpl["width"] or img.height < tmpl["height"])):
+                summary += (f" · ⚠ kaynak ({img.width}×{img.height}) şablondan küçük,"
+                            f" büyütülerek kesilecek (kalite kaybı)")
             batch_count = len(self._batch_files) if self._batch_files else 0
-            self._drop.show_image(preview,
-                                  template_output_summary(img, tmpl, band_count=bands),
-                                  batch_count=batch_count)
+            self._drop.show_image(preview, summary, batch_count=batch_count)
         except Exception as e:
             self._status.error(f"Önizleme hatası: {e}")
 
@@ -1893,7 +1898,14 @@ class App(ctk.CTk):
 
         def worker():
             try:
-                if grid_origin is not None:
+                if grid_origin is not None and path.lower().endswith(".gif"):
+                    # GIF + interaktif grid: tüm kareler grid konumundan
+                    # native kesilir (cover-crop büyütmesi yok)
+                    created = split_gif_frames(
+                        path, outdir, template, cfg,
+                        preset_origin=grid_origin, region_scale=grid_scale,
+                        band_count=grid_bands)
+                elif grid_origin is not None:
                     created = manual_crop_with_template(
                         self, path, outdir, template, cfg,
                         band_count=grid_bands, preset_origin=grid_origin,
