@@ -294,7 +294,8 @@ class VideoPreview(ctk.CTkFrame):
         self._pulse_t = 0.0
         self._pulse_dir = 1
         self._pulse_id = None
-        self._source_img = None
+        self._source_img = None    # ham kaynak karesi (efekt pipeline'ının girdisi)
+        self._display_img = None   # ekranda gösterilen (efektli WYSIWYG) kare
         self._info_text = ""
 
         self._idle = ctk.CTkFrame(self, fg_color="transparent")
@@ -364,6 +365,7 @@ class VideoPreview(ctk.CTkFrame):
         self._idle.pack_forget()
         try:
             self._source_img = Image.open(thumb_path).convert("RGB")
+            self._display_img = None  # efekt önizlemesi gelene dek ham kare
             self._thumb_lbl.pack(expand=True, fill="both", padx=10, pady=(10, 4))
             self._render_image()
         except Exception:
@@ -374,12 +376,19 @@ class VideoPreview(ctk.CTkFrame):
         self._info_lbl.pack(pady=(0, 10))
         self.configure(border_color=C_ACCENT)
 
+    def show_effect_image(self, pil_img):
+        """Efektli WYSIWYG kareyi ana tuvale basar — kaynak kare
+        (get_source_image) efekt pipeline'ının girdisi olarak korunur."""
+        self._display_img = pil_img
+        self._render_image()
+
     def _render_image(self):
-        if self._source_img is None:
+        img = self._display_img or self._source_img
+        if img is None:
             return
         w = max(260, self.winfo_width() - 24)
         h = max(220, self.winfo_height() - 54)
-        img = self._source_img.copy()
+        img = img.copy()
         img.thumbnail((w, h), Image.LANCZOS)
         tk_img = ImageTk.PhotoImage(img)
         self._thumb_lbl.configure(image=tk_img, text="")
@@ -431,10 +440,22 @@ class GifMaker(ctk.CTk):
 
     def __init__(self, preload_path=None):
         super().__init__()
-        self.title("GIF / WebP Maker PRO")
-        self.geometry("980x640")
-        self.minsize(860, 560)
+        self.title("SplitForge GIF Studio")
+        self.geometry("1080x680")
+        self.minsize(900, 580)
         self.configure(fg_color=C_BG1)
+        # Ana uygulamayla aynı marka/ikon (repo kökündeki app_icon.*)
+        _root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        try:
+            self.iconbitmap(os.path.join(_root, "app_icon.ico"))
+        except Exception:
+            pass
+        try:
+            self._icon_photo = ImageTk.PhotoImage(
+                Image.open(os.path.join(_root, "app_icon.png")))
+            self.iconphoto(True, self._icon_photo)
+        except Exception:
+            pass
 
         self.video_path     = None
         self.source_kind    = "video"
@@ -472,49 +493,41 @@ class GifMaker(ctk.CTk):
         left.grid_rowconfigure(1, weight=1)
         left.grid_columnconfigure(0, weight=1)
 
-        # Başlık
+        # Başlık — ana uygulamayla aynı marka
         hdr = ctk.CTkFrame(left, fg_color="transparent")
         hdr.grid(row=0, column=0, sticky="ew")
-        ctk.CTkLabel(hdr, text="🎬",
-                     font=ctk.CTkFont("Segoe UI Emoji", 22),
-                     text_color=C_ACCENT).pack(side="left")
-        ctk.CTkLabel(hdr, text="GIF / WebP Maker",
+        try:
+            _logo_src = Image.open(os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), "..", "app_icon.png"))
+            self._hdr_logo = ctk.CTkImage(light_image=_logo_src,
+                                          dark_image=_logo_src, size=(26, 26))
+            ctk.CTkLabel(hdr, text="", image=self._hdr_logo).pack(side="left")
+        except Exception:
+            ctk.CTkLabel(hdr, text="🎬",
+                         font=ctk.CTkFont("Segoe UI Emoji", 22),
+                         text_color=C_ACCENT).pack(side="left")
+        ctk.CTkLabel(hdr, text="SplitForge",
                      font=ctk.CTkFont("Segoe UI", 15, weight="bold"),
-                     text_color=C_TEXT).pack(side="left", padx=6)
-        ctk.CTkLabel(hdr, text="PRO v2.0",
+                     text_color=C_TEXT).pack(side="left", padx=(6, 4))
+        ctk.CTkLabel(hdr, text="GIF Studio · video → GIF/WebP",
                      font=ctk.CTkFont("Segoe UI", 9),
                      text_color=C_DIM).pack(side="left")
 
-        # Önizlemeler
-        preview_area = ctk.CTkFrame(left, fg_color="transparent")
-        preview_area.grid(row=1, column=0, sticky="nsew", pady=(10, 8))
-        preview_area.grid_columnconfigure(0, weight=1, uniform="preview")
-        preview_area.grid_columnconfigure(1, weight=1, uniform="preview")
-        preview_area.grid_rowconfigure(0, weight=1)
+        # TEK büyük önizleme: efekt uygulanmış WYSIWYG kare burada görünür
+        # (eskiden kaynak + efekt iki ayrı küçük paneldi — birleştirildi)
+        self._preview = VideoPreview(left, self._load_media)
+        self._preview.grid(row=1, column=0, sticky="nsew", pady=(10, 8))
 
-        self._preview = VideoPreview(preview_area, self._load_media)
-        self._preview.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
-
-        self._fx_card = ctk.CTkFrame(
-            preview_area, fg_color=C_BG2, border_color=C_ACCENT,
-            border_width=2, corner_radius=12)
-        self._fx_card.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
-        self._fx_card.grid_rowconfigure(1, weight=1)
-        self._fx_card.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(self._fx_card, text="EFEKT ÖNİZLEME",
-                     font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
-                     text_color=C_DIM).grid(row=0, column=0, sticky="w", padx=12, pady=(10, 2))
-        self._fx_preview_lbl = ctk.CTkLabel(
-            self._fx_card, text="Video veya görsel seçince görünür",
-            fg_color=C_BG1,
-            corner_radius=8,
-            text_color=C_DIM)
-        self._fx_preview_lbl.grid(row=1, column=0, sticky="nsew", padx=10, pady=(4, 10))
-
-        compare_f = ctk.CTkFrame(self._fx_card, fg_color="transparent")
-        compare_f.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
+        # Kaynak seç + Before/After tek satırda
+        src_row = ctk.CTkFrame(left, fg_color="transparent")
+        src_row.grid(row=2, column=0, sticky="ew")
+        src_row.grid_columnconfigure(0, weight=1)
+        AnimButton(src_row, text="📂  Video / Görsel Seç",
+                   nc=C_BG3, hc=C_BG4,
+                   height=38, command=self._pick_media
+                   ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
         ctk.CTkCheckBox(
-            compare_f, text="Before / After",
+            src_row, text="Before / After",
             variable=self._show_before_var,
             font=ctk.CTkFont("Segoe UI", 11),
             text_color=C_TEXT,
@@ -522,13 +535,7 @@ class GifMaker(ctk.CTk):
             hover_color=C_ACC_LT,
             checkmark_color=C_BG0,
             command=self._trigger_effect_preview
-        ).pack(side="left")
-
-        # Kaynak seç butonu
-        AnimButton(left, text="📂  Video / Görsel Seç",
-                   nc=C_BG3, hc=C_BG4,
-                   height=38, command=self._pick_media
-                   ).grid(row=2, column=0, sticky="ew")
+        ).grid(row=0, column=1)
 
         # Dönüştür butonu
         self._btn_convert = AnimButton(
@@ -570,11 +577,18 @@ class GifMaker(ctk.CTk):
         ctk.CTkFrame(parent, height=1, fg_color=C_BORDER
                      ).pack(fill="x", padx=6, pady=8)
 
+    def _section(self, p, title, first=False):
+        """Ayar sütununda numaralı bölüm başlığı — düz kontrol listesi yerine
+        gruplu, taranabilir bir düzen için."""
+        ctk.CTkFrame(p, height=1, fg_color=C_BORDER
+                     ).pack(fill="x", padx=6, pady=(2 if first else 14, 0))
+        ctk.CTkLabel(p, text=title,
+                     font=ctk.CTkFont("Segoe UI", 10, weight="bold"),
+                     text_color=C_ACCENT
+                     ).pack(anchor="w", padx=14, pady=(8, 6))
+
     def _build_settings(self, p):
-        ctk.CTkLabel(p, text="AYARLAR",
-                     font=ctk.CTkFont("Segoe UI", 9, weight="bold"),
-                     text_color=C_DIM
-                     ).pack(anchor="w", padx=14, pady=(14, 6))
+        self._section(p, "①  ÇIKTI", first=True)
 
         # Hazır kalite profilleri
         prof_f = ctk.CTkFrame(p, fg_color="transparent")
@@ -638,8 +652,6 @@ class GifMaker(ctk.CTk):
             command=self._on_setting_change)
         seg2.pack(side="left", fill="x", expand=True)
 
-        self._sep(p)
-
         # FPS slider
         self._fps_row = SliderRow(p, "FPS", 5, 60, 20, fmt="{} fps")
         self._fps_row.pack(fill="x", padx=12, pady=4)
@@ -670,7 +682,7 @@ class GifMaker(ctk.CTk):
             command=self._on_setting_change)
         seg3.pack(side="left", fill="x", expand=True)
 
-        self._sep(p)
+        self._section(p, "②  EFEKT")
 
         effect_f = ctk.CTkFrame(p, fg_color="transparent")
         effect_f.pack(fill="x", padx=12, pady=(4, 4))
@@ -785,10 +797,12 @@ class GifMaker(ctk.CTk):
         self._particle_row.pack(fill="x", padx=12, pady=4)
         self._particle_row.bind_change(lambda _: self._on_setting_change())
 
+        self._section(p, "③  PRESETLER")
+
         preset_card = ctk.CTkFrame(p, fg_color=C_BG3, corner_radius=10)
-        preset_card.pack(fill="x", padx=12, pady=(8, 4))
-        ctk.CTkLabel(preset_card, text="KENDİ PRESETLERİN",
-                     font=ctk.CTkFont("Segoe UI", 8, weight="bold"),
+        preset_card.pack(fill="x", padx=12, pady=(0, 4))
+        ctk.CTkLabel(preset_card, text="Efekt + çıktı ayarlarını isimli preset olarak sakla",
+                     font=ctk.CTkFont("Segoe UI", 9),
                      text_color=C_DIM).pack(anchor="w", padx=10, pady=(8, 4))
         self._user_preset_var = StringVar(value=self._first_user_preset_name())
         self._user_preset_menu = ctk.CTkOptionMenu(
@@ -815,7 +829,7 @@ class GifMaker(ctk.CTk):
                    text_color=C_BG0,
                    command=self._save_user_preset).pack(side="left", fill="x", expand=True, padx=(4, 0))
 
-        self._sep(p)
+        self._section(p, "④  GELİŞMİŞ")
 
         # Süre
         dur_f = ctk.CTkFrame(p, fg_color="transparent")
@@ -843,8 +857,6 @@ class GifMaker(ctk.CTk):
             placeholder_text="boş = serbest")
         self._target_mb_entry.pack(side="left", fill="x", expand=True)
         self._target_mb_entry.bind("<FocusOut>", lambda _: self._on_setting_change())
-
-        self._sep(p)
 
         # Checkboxlar
         self._sharpen_var = BooleanVar(value=True)
@@ -1095,7 +1107,6 @@ class GifMaker(ctk.CTk):
         self._fx_after_id = None
         source = self._preview.get_source_image()
         if source is None:
-            self._fx_preview_lbl.configure(text="Önizleme için kare bekleniyor", image=None)
             return
 
         sharpen= self._sharpen_var.get()
@@ -1106,14 +1117,11 @@ class GifMaker(ctk.CTk):
             img = _apply_effect_to_image(source, sharpen, effect, **params)
             if self._show_before_var.get():
                 img = _make_before_after_preview(source, img)
-            w = max(360, self._fx_preview_lbl.winfo_width() - 20)
-            h = max(360, self._fx_preview_lbl.winfo_height() - 20)
-            img.thumbnail((w, h), Image.LANCZOS)
-            tk_img = ImageTk.PhotoImage(img)
-            self._fx_preview_lbl.configure(image=tk_img, text="")
-            self._fx_preview_lbl._image = tk_img
-        except Exception:
-            self._fx_preview_lbl.configure(text="Önizleme yüklenemedi", image=None)
+            # Tek tuval: efektli kare ana önizlemeye basılır (WYSIWYG);
+            # boyutlandırmayı VideoPreview kendisi yapar.
+            self._preview.show_effect_image(img)
+        except Exception as e:
+            self._status.error(f"Efekt önizlemesi başarısız: {e}")
 
     # ── Tahmin (arka plan thread) ─────────────────────────
     def _trigger_estimate(self):
