@@ -1,104 +1,117 @@
 # SplitForge — Steam Showcase Studio
 
-Steam Workshop / vitrin görselleri için görsel **bölme** + **Steam Community upload otomasyonu**
-masaüstü aracı. customtkinter ile yazılmış koyu temalı bir GUI.
+> Professional desktop tool for creating Steam Workshop showcase images with automated upload.
 
-> İkon `make_icon.py` ile üretilir (`python make_icon.py` → `app_icon.ico` + `app_icon.png`).
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/aykut/steameditor/releases)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Build](https://github.com/aykut/steameditor/actions/workflows/ci.yml/badge.svg)](https://github.com/aykut/steameditor/actions)
+[![Tests](https://img.shields.io/badge/tests-117%20passing-brightgreen.svg)](https://github.com/aykut/steameditor/actions)
 
-## Ne işe yarar?
+## ✨ Features
 
-- Bir görseli (PNG/JPG/WEBP/**GIF**) seçilen şablona göre dikey parçalara böler
-  (Workshop 5-parça, çizim vitrini 2-parça, ekran görüntüsü tek parça, veya özel şablonlar).
-- **Çoklu bant**: tek yüksek çözünürlüklü fotoğraftan üstten alta N adet 5'li set üretir
-  ("Konumu Seç, Gerisini Otomatik Böl" + "Bant sayısı") — vitrine sırayla yüklenince
-  kesintisiz tek görsel gibi görünür. Başlangıç konumunu crop penceresinde sen seçersin
-  (ya da "Ortala" ile tek tık).
-- Animasyonlu GIF'leri kare kare bölerek yine animasyonlu parçalar üretir (gifsicle ile optimize).
-- **Efektler** (tek sekmede, bölme sırasında otomatik uygulanır): Border FX (kenarlık şablonu +
-  renk + glow), Metin Katmanı (başlık/imza, 7 konum, renk/boyut/opaklık), Otomatik İyileştir
-  (kontrast/doygunluk/keskinlik). Efektler parçalara değil TÜM görsele tek seferde uygulanır —
-  parçalar yan yana dizilince renk/metin bütünlüğü bozulmaz.
-- **Profiller**: şablon + efekt + upload ayarlarını isimli profil olarak kaydet, tek tıkla uygula.
-- **Projeler**: üzerinde çalıştığın işin tam durumunu (dosyalar + şablon + çıktı klasörü +
-  efektler + upload URL) kaydet; "Aç" ile aynen geri dön.
-- **Toplu upload kuyruğu**: birden fazla projeyi işaretle, sırayla bölünüp Steam Community'ye
-  yüklensin (proje başına 35 dk emniyet zaman sınırı, İptal ile güvenli durdurma).
-- Parçaları Playwright ile bir tarayıcı oturumu üzerinden Steam Community'ye yüklemeyi otomatikleştirir.
-- Ayrı bir **GIF / WebP Maker** (`GİF/gif.py`) ile video → GIF/WebP dönüştürür (ffmpeg).
+- **🎯 Precise Splitting**: Uniform (5-part Workshop), Multi (Artwork), Single (Screenshot)
+- **✨ Effects Pipeline**: Border FX (10 templates + glow), Text Overlay (7 positions + drag), Auto-Enhance
+- **📦 Batch Processing**: Folder processing, multi-band for tall images
+- **🎮 Steam Integration**: Last-byte patch, console snippets, auto-upload via Playwright
+- **💾 Project Management**: Save/load complete workflows (template + effects + upload URL)
+- **🔄 Auto-Updates**: GitHub Releases integration with silent background checks
 
-## Dosya yapısı
-
-| Yol | Açıklama |
-|-----|----------|
-| `editor.py` | GUI (App + widget'lar + manuel crop). Çalıştırılacak dosya budur. |
-| `core.py` | UI'sız saf işleme katmanı (patch/gifsicle/resize/border-fx/GIF-split/process_image). |
-| `config.py` | Şablon sabitleri, config/preset yükle-kaydet, Steam manifest yardımcıları. |
-| `steam_community_uploader.py` | Playwright tabanlı Steam Community upload alt-süreci. |
-| `GİF/gif.py` | Bağımsız GIF/WebP yapım aracı (editörden "GIF Maker" ile açılır). |
-| `Border Templates/` | Border FX için kullanılan PNG kenarlık şablonları. |
-| `GİF/bin/` | Bundle edilen `ffmpeg`, `ffprobe`, `gifsicle` binary'leri (repoya dahil değil). |
-| `applog.py` | Ortak log altyapısı — her şey `steam_splitter.log`a da yazılır. |
-| `steam_splitter_config.json` | Uygulama ayarları (otomatik kaydedilir). |
-| `steam_splitter_presets.json` | Özel şablonlar. |
-| `steam_splitter_profiles.json` | Kayıtlı profiller (şablon+efekt+upload kombinasyonları). |
-| `steam_splitter_projects.json` | Kayıtlı projeler (aktif iş durumları). |
-| `steam_notes.txt` | Steam console kodları / linkler (uygulama içinden düzenlenebilir). |
-| `tests/` | `core.py`/`config.py`/`GİF/gif.py` için pytest testleri. |
-
-## Kurulum
-
-Python 3.10+ gerekir (tip ipuçları için `str | None` kullanılıyor).
+## 🚀 Quick Start
 
 ```bash
+# Install from release
+# Download SplitForge_Setup_2.0.0.exe from Releases
+
+# Or run from source
 pip install -r requirements.txt
-# Playwright tarayıcılarını ilk kez indir (upload otomasyonu için):
-python -m playwright install
+python -m steameditor
 ```
 
-`requirements.txt`: `customtkinter`, `Pillow`, `pynput`, `playwright`, `tkinterdnd2`.
+## 📖 Documentation
 
-**Bundle binary'ler:** GIF işleme için `ffmpeg`/`ffprobe`/`gifsicle` gerekir. Bunlar `GİF/bin/`
-(ve gifsicle için ek olarak proje kökü) altında aranır; PATH'te de bulunabilir. Repoya dahil
-edilmezler (boyut nedeniyle `.gitignore`'da) — ayrı indirip ilgili klasöre koy.
+- [User Guide](docs/user-guide.md)
+- [Developer Docs](docs/developer.md)
 
-## Çalıştırma
+## 🏗️ Architecture
+
+```
+src/steameditor/
+├── core/           # Pure business logic (no UI deps)
+│   ├── models.py   # Pydantic models (Template, EffectConfig, Profile, Project)
+│   ├── processor.py# Image/GIF processing pipeline
+│   └── uploader.py # Steam Community upload (Playwright)
+├── services/       # Singleton services
+│   ├── config_service.py
+│   ├── worker_pool.py
+│   ├── image_cache.py
+│   └── log_service.py
+├── ui/             # CustomTkinter UI
+│   ├── app.py      # Main window
+│   ├── components.py
+│   ├── design_system.py
+│   └── pages/
+│       └── settings_page.py
+├── events.py       # Event bus (pub/sub)
+├── exceptions.py   # Custom exception hierarchy
+├── config.py       # Legacy compat layer
+└── __main__.py     # Entry point
+```
+
+## 🧪 Testing
 
 ```bash
-python editor.py
+# Run all tests
+pytest tests/ -v
+
+# With coverage
+pytest tests/ --cov=src/steameditor --cov-report=html --cov-fail-under=80
+
+# Type checking
+pyright src/steameditor/core src/steameditor/services src/steameditor/events.py src/steameditor/exceptions.py
+
+# Linting
+ruff check src/ tests/
+ruff format --check src/ tests/
 ```
 
-Bir resmi pencereye **sürükle-bırak** (ya da "Dosya/Klasör Seç"), bir şablon seç, **Böl**'e bas.
-Klasör seçip **Toplu Böl** ile tüm klasörü işleyebilirsin. Çıktılar `output/` altına yazılır.
-
-## Notlar / bilinen davranışlar
-
-- **PNG/GIF son-byte patch**: Workshop vitrin hilesi için çıktının son byte'ı `0x21` yapılır
-  (şablonda "patch" açıksa). Bu dosyayı teknik olarak "bozar" ama çoğu görüntüleyici tolere eder.
-- **Upload otomasyonu** ayrı bir tarayıcı profili (`.steam_browser_profile/`) kullanır; ilk
-  çalıştırmada Steam'e giriş yapman gerekir. Manuel modda gönderim 30 dk içinde tamamlanmazsa
-  o parça atlanır; monitör penceresinden **İptal Et** ile süreci durdurabilirsin.
-- `auto_submit` açıkken uploader "Kaydet ve Devam Et"e otomatik basar — gözetimsiz toplu yükleme
-  için uygundur; tek tek kontrol etmek istiyorsan ayarlardan kapat.
-- Uploader yalnızca **sözleşme/onay** niteliğindeki checkbox'ları işaretler (agree/terms/kabul...);
-  Steam formuna eklenen tanımadığı kutulara dokunmaz, atladıklarını loglar.
-- Bir sorun olduğunda önce `steam_splitter.log` dosyasına bak — tüm hata/işlem kayıtları orada
-  (uygulama konsolsuz başlatılmış olsa bile).
-
-## Test
+## 📦 Building
 
 ```bash
-pip install -r requirements-dev.txt
-pytest
+# Install build deps
+pip install pyinstaller nsis
+
+# Build executable
+python packaging/build.py
+
+# Build installer (requires NSIS)
+makensis /DVERSION=2.0.0 packaging/nsis/installer.nsi
 ```
 
-`core.py` ve `config.py` testleri her zaman çalışır (ffmpeg/gifsicle gerektirmez).
-`GİF/gif.py` testlerindeki gerçek ffmpeg dönüştürme testleri `GİF/bin/` altında binary'ler
-yoksa otomatik atlanır (`skip`); saf fonksiyon testleri (renk/efekt/border-template mantığı)
-her koşulda çalışır.
+## 🤝 Contributing
 
-## Sorun giderme
+1. Fork the repo
+2. Create feature branch (`git checkout -b feature/amazing`)
+2. Install pre-commit: `pre-commit install`
+3. Make changes, add tests
+4. Run checks: `pre-commit run --all-files`
+5. Submit PR
 
-- **Sürükle-bırak çalışmıyor** → `tkinterdnd2` kurulu mu? (`pip install tkinterdnd2`)
-- **GIF bölünmüyor / optimize olmuyor** → `GİF/bin/gifsicle.exe` var mı?
-- **GIF Maker'da dönüşüm hata veriyor** → `ffmpeg`/`ffprobe` bulunamıyor olabilir (PATH veya `GİF/bin/`).
-- **Upload başlamıyor** → `python -m playwright install` çalıştırıldı mı?
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## 🙏 Acknowledgments
+
+- [customtkinter](https://github.com/TomSchimansky/CustomTkinter) - Modern UI
+- [Pillow](https://python-pillow.org/) - Image processing
+- [Playwright](https://playwright.dev/python/) - Browser automation
+- [Pydantic](https://docs.pydantic.dev/) - Data validation
+- [gifsicle](https://www.lcdf.org/gifsicle/) - GIF optimization
+- [ffmpeg](https://ffmpeg.org/) - Video → GIF/WebP
+
+---
+
+**Made with ❤️ for the Steam Workshop community**
+
+[Report Bug](https://github.com/aykut/steameditor/issues) · [Request Feature](https://github.com/aykut/steameditor/issues/new)

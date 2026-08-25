@@ -390,6 +390,14 @@ def steam_api_config_errors(cfg: dict) -> list[str]:
     return errors
 
 
+def clear_text_overlay_custom_pos(cfg: dict | None) -> None:
+    """Kullanıcı 'Metni Sıfırla' dediğinde serbest yerleştirmeyi kaldır.
+    In-place; kalıcılık çağıranın sorumluluğunda (save_config)."""
+    if cfg is None:
+        return
+    cfg.pop("text_overlay_custom_pos", None)
+
+
 def get_template_console_snippet(template: dict) -> tuple[str, str]:
     title = TEMPLATE_SNIPPET_HINTS.get(template.get("mode"), "")
     for snippet_title, snippet in STEAM_CONSOLE_SNIPPETS:

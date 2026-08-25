@@ -2937,7 +2937,7 @@ class App(ctk.CTk):
     def _open_gif_maker(self):
         gif_script = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
-            "GİF", "gif.py")
+            "GIF", "gif.py")
         if not os.path.exists(gif_script):
             self._status.error("gif.py bulunamadı")
             return

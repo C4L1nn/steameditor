@@ -79,7 +79,7 @@ def find_gifsicle() -> str | None:
         return found
     root = os.path.dirname(os.path.abspath(__file__))
     candidates = [
-        os.path.join(root, "GİF", "bin", "gifsicle.exe"),
+        os.path.join(root, "GIF", "bin", "gifsicle.exe"),
         os.path.join(root, "GIF", "bin", "gifsicle.exe"),
         os.path.join(root, "bin", "gifsicle.exe"),
     ]
@@ -252,6 +252,19 @@ def _parse_hex_color(value: str, fallback=(139, 92, 246)) -> tuple[int, int, int
         return fallback
 
 
+def _parse_int_safe(value, default: int) -> int:
+    """Int değeri güvenli parse eder; None veya parse edilemezse default'a düşer.
+    Buradaki kritik nüans: `value or default` yapsaydık gerçek 0 değeri de
+    default'a dönerdi (kullanıcı opacity/size'ı 0'a çekince). Burada None
+    olan 'yok' demek, 0 olan 'kasıtlı sıfır' demek."""
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def _border_cfg_enabled(cfg: dict | None) -> bool:
     if not cfg or not bool(cfg.get("border_fx_enabled", False)):
         return False
@@ -268,8 +281,8 @@ def apply_border_fx(img: Image.Image, cfg: dict | None) -> Image.Image:
     try:
         base = img.convert("RGBA")
         border = Image.open(path).convert("RGBA").resize(base.size, Image.LANCZOS)
-        opacity = max(0, min(100, int(cfg.get("border_fx_opacity", 100) or 100))) / 100.0
-        glow = max(0, min(100, int(cfg.get("border_fx_glow", 0) or 0))) / 100.0
+        opacity = max(0, min(100, _parse_int_safe(cfg.get("border_fx_opacity"), 100))) / 100.0
+        glow = max(0, min(100, _parse_int_safe(cfg.get("border_fx_glow"), 0))) / 100.0
         color = _parse_hex_color(cfg.get("border_fx_color", "#8B5CF6"))
 
         alpha = border.getchannel("A")
@@ -299,10 +312,7 @@ def apply_auto_enhance(img: Image.Image, cfg: dict | None) -> Image.Image:
     Workshop parçaları arasında renk uyumsuzluğuna yol açardı)."""
     if not cfg or not bool(cfg.get("auto_enhance_enabled", False)):
         return img
-    raw_intensity = cfg.get("auto_enhance_intensity", 50)
-    if raw_intensity is None:  # "or 50" kullanılırsa gerçek 0 değeri de 50'ye döner
-        raw_intensity = 50
-    intensity = max(0, min(100, int(raw_intensity))) / 100.0
+    intensity = max(0, min(100, _parse_int_safe(cfg.get("auto_enhance_intensity"), 50))) / 100.0
     if intensity <= 0:
         return img
     try:
@@ -364,7 +374,7 @@ def _text_overlay_geometry(size: tuple[int, int], cfg: dict):
     if not text:
         return None
     W, H = size
-    size_pct = max(1, min(30, int(cfg.get("text_overlay_size", 6) or 6)))
+    size_pct = max(1, min(30, _parse_int_safe(cfg.get("text_overlay_size"), 6)))
     font_size = max(10, int(H * size_pct / 100))
     font = _load_overlay_font(font_size)
 
@@ -424,10 +434,7 @@ def apply_text_overlay(img: Image.Image, cfg: dict | None) -> Image.Image:
         draw = ImageDraw.Draw(layer)
 
         color = _parse_hex_color(cfg.get("text_overlay_color", "#FFFFFF"), (255, 255, 255))
-        raw_opacity = cfg.get("text_overlay_opacity", 100)
-        if raw_opacity is None:  # "or 100" kullanılırsa gerçek 0 değeri de 100'e döner
-            raw_opacity = 100
-        opacity = max(0, min(100, int(raw_opacity))) / 100.0
+        opacity = max(0, min(100, _parse_int_safe(cfg.get("text_overlay_opacity"), 100))) / 100.0
         alpha = int(255 * opacity)
 
         x -= bbox[0]
@@ -618,7 +625,11 @@ def _load_gif_frames(path: str):
 
 def _save_animated_gif(frames_rgba, durations, outpath: str, patch: bool = False):
     """RGBA frame listesini animasyonlu GIF olarak kaydeder.
-    Şeffaflık varsa korunur; aksi halde saydam/glow alanları siyaha dönerdi."""
+    Şeffaflık varsa korunur; aksi halde saydam/glow alanları siyaha dönerdi.
+    patch=True ise dosyaya yazıldıktan SONRA trailing byte `0x21`'e çekilir
+    (gifsicle optimize AŞAMASINDAN ÖNCE uygulanırsa boyutu büyür, sonra da
+    gifsicle'in son byte'ı ezme riski var — sıralama çağıranın sorumluluğunda;
+    mevcut çağrılarda optimize->patch olarak işletilir)."""
     rgba_frames = [f.convert("RGBA") for f in frames_rgba]
     has_alpha = any(fr.getchannel("A").getextrema()[0] < 250 for fr in rgba_frames)
 
@@ -641,7 +652,7 @@ def _save_animated_gif(frames_rgba, durations, outpath: str, patch: bool = False
             duration=durations, loop=0, disposal=2,
         )
     if patch:
-        _log.info(f"[PATCH SKIP] GIF dosyasında son byte patch uygulanmadı: {os.path.basename(outpath)}")
+        patch_gif_trailing_byte(outpath)
 
 
 def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = None,

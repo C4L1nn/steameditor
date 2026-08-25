@@ -7,7 +7,7 @@ import gif
 
 
 needs_ffmpeg = pytest.mark.skipif(
-    gif.FFMPEG_MISSING, reason="ffmpeg bulunamadı (GİF/bin altında bundle değilse atlanır)")
+    gif.FFMPEG_MISSING, reason="ffmpeg bulunamadı (GIF/bin altında bundle değilse atlanır)")
 needs_gifsicle = pytest.mark.skipif(
     gif.GIFSICLE_MISSING, reason="gifsicle bulunamadı")
 

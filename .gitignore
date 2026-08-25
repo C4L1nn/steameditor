@@ -16,14 +16,19 @@ steam_upload_manifest.json
 .steam_browser_profile/
 
 # Bundle edilen büyük binary'ler (depoya konmaz, ayrı dağıtılır)
-GİF/bin/
+GIF/bin/
 GIF/bin/
 
 # OS
 Thumbs.db
 .DS_Store
 
+# Yerel araç yapılandırması (API anahtarı içerir)
+opencode.json
+
 # Log dosyaları
-steam_splitter.log*
+*.log
+
+# Çalışma zamanı kullanıcı verisi
 steam_splitter_history.json
 steam_splitter_recovery.json
