@@ -32,3 +32,6 @@ opencode.json
 # Çalışma zamanı kullanıcı verisi
 steam_splitter_history.json
 steam_splitter_recovery.json
+
+# Bundle edilen buyuk binary'ler (v2 paket kaynaklari)
+src/steameditor/resources/GIF_bin/

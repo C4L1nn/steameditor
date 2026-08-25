@@ -1,0 +1,462 @@
+"""config.py — Steam Splitter PRO ayarlar / preset / Steam metadata katmanı.
+
+editor.py bu modülden import eder. Tkinter'a bağlı değildir.
+"""
+import os
+import json
+
+try:
+    from applog import get_logger  # kök monolit ile birlikte çalışırken
+except ImportError:  # paket içi kullanım — döngüsel import olmadan sade logger
+    import logging
+
+    def get_logger(name: str = "config") -> logging.Logger:
+        return logging.getLogger(f"steameditor.{name}")
+
+_log = get_logger("config")
+
+
+# ==========================================================
+#   ŞABLONLAR (3 temel vitrin)
+# ==========================================================
+
+# Kullanıcının doğrulanmış Steam akışındaki 3 temel vitrin — bunlar
+# varsayılan kalır, gerisi "özel şablon" ile oluşturulur.
+TEMPLATES = [
+    {
+        "name": "Atölye Vitrini 5-Parça (150×1250)",
+        "mode": "uniform",       # 5 dikey parça (151,151,151,151,150)
+        "width": 754,            # hedef canvas — Steam vitrini kesim noktaları
+                                 # 151-302-453-604 (elle doğrulanmış akış; 750
+                                 # kullanılırsa vitrinde hiza kayması oluşur)
+        "height": 1250,
+        "parts": 5,
+        "patch": True,           # son byte 0x21 (hexed.it adımının otomatiği)
+        "prefix": "work"
+    },
+    {
+        "name": "Çizim Vitrini 2-Parça (506 + 100)",
+        "mode": "multi",         # her parça farklı boyut
+        "parts": [
+            {"width": 506, "height": 1000},
+            {"width": 100, "height": 1000},
+        ],
+        "patch": False,
+        "prefix": "art"
+    },
+    {
+        "name": "Ekran Görüntüsü Tek Parça (650×1000)",
+        "mode": "single",        # tek çıktı
+        "width": 650,
+        "height": 1000,
+        "patch": False,
+        "prefix": "shot"
+    },
+]
+
+
+STEAM_HELPER_LINKS = [
+    ("Çizim / Ekran Görüntüsü", "https://steamcommunity.com/sharedfiles/edititem/767/3/"),
+    ("Atölye Vitrini", "https://steamcommunity.com/sharedfiles/filedetails/?id=2174159512"),
+    ("Steam Design", "https://steam.design/"),
+    ("HexEd.it", "https://hexed.it/"),
+    ("EzGIF", "https://ezgif.com/"),
+]
+
+
+STEAM_CONSOLE_SNIPPETS = [
+    (
+        "Çizim vitrini boyut hilesi",
+        "$J('#image_width').val(1000).attr('id',''),$J('#image_height').val(1).attr('id','');"
+    ),
+    (
+        "Ekran görüntüsü file_type",
+        "$J('#image_width').val('1000');$J('#image_height').val('1');$J('[name=\"file_type\"]').val(\"5\");"
+    ),
+    (
+        "Atölye vitrini ayarları",
+        "$J('[name=consumer_app_id]').val(480);$J('[name=file_type]').val(0);$J('[name=visibility]').val(0);"
+    ),
+]
+
+
+STEAM_UPLOAD_STEPS = [
+    "Görseli doğru şablonla böl",
+    "Workshop parçalarında son byte patch kontrolü yap",
+    "Steam sayfasını aç ve F12/console alanını hazırla",
+    "İlgili console kodunu yapıştır",
+    "Parçaları sırayla yükle ve görünürlüğü kontrol et",
+]
+
+
+STEAM_DIRECT_UPLOAD_NOTE = (
+    "Steam Web API, lokal PNG/GIF dosyalarını API key ile doğrudan Workshop'a "
+    "yükleyen bir endpoint sunmuyor. API key ile detay sorgulama/güncelleme "
+    "yapılabilir; dosya bitleri Steamworks SDK, SteamCMD veya Steam Community "
+    "web oturumu üzerinden gider."
+)
+
+
+TEMPLATE_SNIPPET_HINTS = {
+    "uniform": "Atölye vitrini ayarları",
+    "multi": "Çizim vitrini boyut hilesi",
+    "single": "Ekran görüntüsü file_type",
+}
+
+
+# ==========================================================
+#   PRESET JSON — Yükleme / Kaydetme
+# ==========================================================
+
+_PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_presets.json")
+
+
+_CONFIG_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_config.json")
+
+
+_PROFILES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_profiles.json")
+
+PROFILE_KEYS = (
+    "autocrop_enabled",
+    "border_fx_enabled", "border_fx_template", "border_fx_color",
+    "border_fx_opacity", "border_fx_glow",
+    "text_overlay_enabled", "text_overlay_text", "text_overlay_color",
+    "text_overlay_size", "text_overlay_position", "text_overlay_opacity",
+    "auto_enhance_enabled", "auto_enhance_intensity",
+    "auto_upload", "steam_community_auto_submit",
+)
+
+
+_PROJECTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_projects.json")
+
+
+def load_custom_presets():
+    """
+    steam_splitter_presets.json içindeki özel şablonları TEMPLATES listesine ekler.
+    Şema: name, mode (yoksa 'uniform' — eski dosyalarla geriye uyumlu),
+    width/height (+parts sayısı uniform'da), multi'de parts listesi
+    [{width,height},...], last_byte, prefix.
+    """
+    if not os.path.exists(_PRESETS_FILE):
+        return
+    try:
+        with open(_PRESETS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        existing_names = {t["name"] for t in TEMPLATES}
+        for p in data:
+            name = p.get("name", "")
+            if not name or name in existing_names:
+                continue
+            mode = p.get("mode", "uniform")
+            patch = p.get("last_byte", 0) != 0
+            prefix = p.get("prefix", "cus")
+            if mode == "multi":
+                parts = [
+                    {"width": int(x.get("width", 100)), "height": int(x.get("height", 100))}
+                    for x in p.get("parts", []) if isinstance(x, dict)
+                ]
+                if not parts:
+                    continue
+                tmpl = {"name": name, "mode": "multi", "parts": parts,
+                        "patch": patch, "prefix": prefix}
+            elif mode == "single":
+                tmpl = {"name": name, "mode": "single",
+                        "width": p.get("width", 650), "height": p.get("height", 850),
+                        "patch": patch, "prefix": prefix}
+            else:  # uniform (mode alanı olmayan eski kayıtlar dahil)
+                tmpl = {"name": name, "mode": "uniform",
+                        "width": p.get("width", 750), "height": p.get("height", 1250),
+                        "parts": p.get("parts", 5), "patch": patch, "prefix": prefix}
+            TEMPLATES.append(tmpl)
+            existing_names.add(name)
+    except Exception as e:
+        _log.error(f"[PRESETS LOAD ERR] {e}")
+
+
+def save_custom_presets():
+    """
+    TEMPLATES listesinden özel (built-in olmayan) şablonları JSON'a yazar.
+    İlk 3 built-in şablon korunur, kaydedilmez.
+    """
+    try:
+        custom = []
+        for t in TEMPLATES:
+            if t.get("prefix") in ("work", "art", "shot"):
+                continue
+            mode = t.get("mode", "uniform")
+            entry = {
+                "name": t["name"],
+                "mode": mode,
+                "last_byte": 33 if t.get("patch") else 0,
+                "prefix": t.get("prefix", "cus"),
+            }
+            if mode == "multi":
+                entry["parts"] = [
+                    {"width": p["width"], "height": p["height"]} for p in t.get("parts", [])
+                ]
+            else:
+                entry["width"] = t.get("width", 750)
+                entry["height"] = t.get("height", 1250)
+                if mode == "uniform":
+                    entry["parts"] = t.get("parts", 5)
+            custom.append(entry)
+        with open(_PRESETS_FILE, "w", encoding="utf-8") as f:
+            json.dump(custom, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        _log.error(f"[PRESETS SAVE ERR] {e}")
+
+
+def load_profiles() -> dict:
+    """steam_splitter_profiles.json'u dict olarak döner (isim -> ayar seti)."""
+    if not os.path.exists(_PROFILES_FILE):
+        return {}
+    try:
+        with open(_PROFILES_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        _log.error(f"[PROFILES LOAD ERR] {e}")
+        return {}
+
+
+def save_profiles(profiles: dict):
+    try:
+        with open(_PROFILES_FILE, "w", encoding="utf-8") as f:
+            json.dump(profiles, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        _log.error(f"[PROFILES SAVE ERR] {e}")
+
+
+def load_projects() -> dict:
+    """steam_splitter_projects.json'u dict olarak döner (proje adı -> aktif iş
+    durumu: giriş dosyaları/klasörü, şablon, çıktı klasörü, Workshop item bilgisi)."""
+    if not os.path.exists(_PROJECTS_FILE):
+        return {}
+    try:
+        with open(_PROJECTS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except Exception as e:
+        _log.error(f"[PROJECTS LOAD ERR] {e}")
+        return {}
+
+
+def save_projects(projects: dict):
+    try:
+        with open(_PROJECTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(projects, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        _log.error(f"[PROJECTS SAVE ERR] {e}")
+
+
+_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_history.json")
+
+
+def load_history() -> list:
+    """Upload geçmişini liste olarak döner (eski -> yeni sırada).
+    Kayıt: {time, source ('manuel'|'kuyruk'), label, files, completed, state}."""
+    if not os.path.exists(_HISTORY_FILE):
+        return []
+    try:
+        with open(_HISTORY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except Exception as e:
+        _log.error(f"[HISTORY LOAD ERR] {e}")
+        return []
+
+
+def append_history(record: dict, limit: int = 200):
+    """Geçmişe kayıt ekler; en fazla `limit` kayıt tutulur (eskiler düşer)."""
+    records = load_history()
+    records.append(record)
+    records = records[-limit:]
+    try:
+        with open(_HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(records, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        _log.error(f"[HISTORY SAVE ERR] {e}")
+
+
+def clear_history():
+    try:
+        if os.path.exists(_HISTORY_FILE):
+            os.remove(_HISTORY_FILE)
+    except Exception as e:
+        _log.error(f"[HISTORY CLEAR ERR] {e}")
+
+
+_RECOVERY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_recovery.json")
+
+
+def save_recovery(state: dict):
+    """Çalışma durumu anlık görüntüsünü yazar (kilitlenme kurtarması için).
+    Temiz kapanışta clear_recovery çağrılır; dosyanın açılışta VAR olması
+    'son oturum düzgün kapanmadı' demektir."""
+    try:
+        with open(_RECOVERY_FILE, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        _log.error(f"[RECOVERY SAVE ERR] {e}")
+
+
+def load_recovery() -> dict | None:
+    if not os.path.exists(_RECOVERY_FILE):
+        return None
+    try:
+        with open(_RECOVERY_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except Exception as e:
+        _log.error(f"[RECOVERY LOAD ERR] {e}")
+        return None
+
+
+def clear_recovery():
+    try:
+        if os.path.exists(_RECOVERY_FILE):
+            os.remove(_RECOVERY_FILE)
+    except Exception as e:
+        _log.error(f"[RECOVERY CLEAR ERR] {e}")
+
+
+def load_config() -> dict:
+    """steam_splitter_config.json'u dict olarak döner."""
+    defaults = {
+        "default_preset": "Atölye Vitrini 5-Parça (150×1250)",
+        "output_dir": "",
+        "last_input_dir": "",
+        "open_output_after_process": False,
+        "auto_upload": False,
+        "steam_api_key": "",
+        "steam_app_id": "",
+        "steam_published_file_id": "",
+        "steam_community_upload_url": "https://steamcommunity.com/sharedfiles/edititem/767/3/",
+        "steam_community_profile_dir": os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), ".steam_browser_profile"),
+        "steam_community_auto_submit": False,
+        "steam_community_wait_after_upload_ms": 1200,
+        "steam_community_title_template": "\u200e ",
+        "border_fx_enabled": False,
+        "border_fx_template": "",
+        "border_fx_color": "#8B5CF6",
+        "border_fx_opacity": 100,
+        "border_fx_glow": 35,
+        "text_overlay_enabled": False,
+        "text_overlay_text": "",
+        "text_overlay_color": "#FFFFFF",
+        "text_overlay_size": 6,
+        "text_overlay_position": "Alt Orta",
+        "text_overlay_opacity": 100,
+        "auto_enhance_enabled": False,
+        "auto_enhance_intensity": 50,
+        "multi_band_count": 3,
+        "autocrop_enabled": False,  # bölmeden önce şeffaf/tek renk kenarı kırp
+        "onboarding_tips_shown": False,  # ilk interaktif önizlemede rehber balonu
+        "output_format": "png",     # png | jpg (jpg'de patch uygulanmaz)
+        "jpg_quality": 90,
+        "gif_lossy": 30,     # 80 gözle görülür kalite kaybı yapıyordu
+        "gif_colors": 256,
+    }
+    if not os.path.exists(_CONFIG_FILE):
+        return defaults
+    try:
+        with open(_CONFIG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        defaults.update(data)
+    except Exception as e:
+        _log.error(f"[CONFIG LOAD ERR] {e}")
+    return defaults
+
+
+def save_config(cfg: dict):
+    try:
+        with open(_CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        _log.error(f"[CONFIG SAVE ERR] {e}")
+
+
+def _masked_key(key: str) -> str:
+    if not key:
+        return ""
+    if len(key) <= 8:
+        return "*" * len(key)
+    return key[:4] + "*" * (len(key) - 8) + key[-4:]
+
+
+def steam_api_config_errors(cfg: dict) -> list[str]:
+    errors = []
+    if not cfg.get("steam_api_key", "").strip():
+        errors.append("steam_api_key boş")
+    if not cfg.get("steam_app_id", "").strip():
+        errors.append("steam_app_id boş")
+    if not cfg.get("steam_published_file_id", "").strip():
+        errors.append("steam_published_file_id boş")
+    return errors
+
+
+def clear_text_overlay_custom_pos(cfg: dict | None) -> None:
+    """Kullanıcı 'Metni Sıfırla' dediğinde serbest yerleştirmeyi kaldır.
+    In-place; kalıcılık çağıranın sorumluluğunda (save_config)."""
+    if cfg is None:
+        return
+    cfg.pop("text_overlay_custom_pos", None)
+
+
+def get_template_console_snippet(template: dict) -> tuple[str, str]:
+    title = TEMPLATE_SNIPPET_HINTS.get(template.get("mode"), "")
+    for snippet_title, snippet in STEAM_CONSOLE_SNIPPETS:
+        if snippet_title == title:
+            return snippet_title, snippet
+    return "", ""
+
+
+def build_steam_upload_manifest(file_paths: list[str], cfg: dict, outdir: str,
+                                template: dict | None = None) -> str:
+    os.makedirs(outdir, exist_ok=True)
+    manifest_path = os.path.join(outdir, "steam_upload_manifest.json")
+    files = []
+    for path in file_paths:
+        try:
+            size = os.path.getsize(path)
+        except Exception:
+            size = 0
+        files.append({
+            "path": os.path.abspath(path),
+            "name": os.path.basename(path),
+            "size": size,
+        })
+
+    snippet_title, snippet = get_template_console_snippet(template or {})
+    manifest = {
+        "created_by": "Steam Splitter PRO",
+        "direct_web_api_upload_supported": False,
+        "note": STEAM_DIRECT_UPLOAD_NOTE,
+        "steam": {
+            "api_key": _masked_key(cfg.get("steam_api_key", "")),
+            "app_id": cfg.get("steam_app_id", ""),
+            "published_file_id": cfg.get("steam_published_file_id", ""),
+        },
+        "steam_community": {
+            "url": cfg.get("steam_community_upload_url", "https://steamcommunity.com/sharedfiles/edititem/767/3/"),
+            "profile_dir": cfg.get("steam_community_profile_dir", ""),
+            "auto_submit": bool(cfg.get("steam_community_auto_submit", False)),
+            "wait_after_upload_ms": int(cfg.get("steam_community_wait_after_upload_ms", 1200) or 1200),
+            "title_template": cfg.get("steam_community_title_template", "\u200e "),
+            "console_snippet_title": snippet_title,
+            "console_snippet": snippet,
+        },
+        "files": files,
+    }
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+    return manifest_path
+
+
+def upload_status_path(manifest_path: str) -> str:
+    return os.path.splitext(manifest_path)[0] + ".status.json"
+
+
+# Uygulama başlarken özel presetleri yükle
+load_custom_presets()
