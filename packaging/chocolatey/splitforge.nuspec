@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Chocolatey package for SplitForge -->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>splitforge</id>
+    <version>2.0.0</version>
+    <title>SplitForge - Steam Showcase Studio</title>
+    <authors>Aykut</authors>
+    <owners>Aykut</owners>
+    <summary>Professional desktop tool for creating Steam Workshop showcase images with automated upload</title>
+    <description>
+      SplitForge is a professional desktop application for creating Steam Workshop showcase images.
+      
+      Features:
+      - Precise image splitting for Workshop (5-part), Artwork (2-part), and Screenshot (single) templates
+      - Interactive grid preview with drag/resize/zoom
+      - Multi-band support for tall images (creates seamless vertical sets)
+      - Effects pipeline: Border FX (10 templates), Text Overlay (7 positions + drag), Auto-Enhance
+      - GIF animation support with frame-by-frame splitting and gifsicle optimization
+      - Steam Community upload automation via Playwright
+      - Projects/Profiles for saving complete workflows
+      - Projects/Profiles for saving complete workflows
+      - Steam Console snippets and quick links
+      - Auto-updater with GitHub Releases integration
+      
+      Perfect for Steam Workshop creators, artists, and modders.
+    </description>
+    <projectUrl>https://github.com/aykut/steameditor</projectUrl>
+    <projectSourceUrl>https://github.com/aykut/steameditor</projectSourceUrl>
+    <docsUrl>https://github.com/aykut/steameditor/blob/main/docs/user-guide.md</docsUrl>
+    <mailingListUrl>https://github.com/aykut/steameditor/discussions</mailingListUrl>
+    <bugTrackerUrl>https://github.com/aykut/steameditor/issues</bugTrackerUrl>
+    <iconUrl>https://raw.githubusercontent.com/aykut/steameditor/main/src/steameditor/resources/app_icon.ico</iconUrl>
+    <licenseUrl>https://github.com/aykut/steameditor/blob/main/LICENSE</licenseUrl>
+    <license type="expression">MIT</license>
+    <tags>steam workshop showcase image splitter gif maker upload automation</tags>
+    <copyright>Copyright (c) 2024 Aykut</copyright>
+    <releaseNotes>
+      ## 2.0.0 - Major Rewrite
+      - Complete architecture rewrite with modular design
+      - New plugin system for custom effects
+      - Custom border template editor
+      - Color palette manager
+      - Animation timeline for GIF Maker
+      - Cross-platform support (Windows, Linux, macOS)
+      - Auto-updater with GitHub Releases
+      - 117 tests passing, 80%+ coverage
+    </releaseNotes>
+  </metadata>
+  <files>
+    <file src="tools\**" target="" />
+  </files>
+</package>

@@ -1,0 +1,246 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "steameditor"
+version = "2.0.0"
+description = "SplitForge — Steam Showcase Studio"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "Aykut", email = "aykut@example.com"}]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows :: Windows 10",
+    "Operating System :: Microsoft :: Windows :: Windows 11",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Multimedia :: Graphics :: Editors",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "customtkinter>=5.2.0",
+    "Pillow>=10.0.0",
+    "pynput>=1.7.6",
+    "playwright>=1.40.0",
+    "tkinterdnd2>=0.3.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "platformdirs>=4.0.0",
+    "loguru>=0.7.0",
+    "psutil>=5.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-mock>=3.12.0",
+    "ruff>=0.1.0",
+    "pyright>=1.1.300",
+    "mypy>=1.7.0",
+    "types-Pillow>=10.0.0",
+    "pre-commit>=3.6.0",
+]
+packaging = [
+    "pyinstaller>=6.1.0",
+    "nsist>=3.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/aykut/steameditor"
+Repository = "https://github.com/aykut/steameditor"
+Issues = "https://github.com/aykut/steameditor/issues"
+
+[project.scripts]
+steameditor = "steameditor.__main__:main"
+splitforge = "steameditor.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["steameditor*"]
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "slow: marks tests as slow",
+    "integration: marks tests as integration tests",
+    "requires_binary: marks tests requiring ffmpeg/gifsicle",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = [
+    "E", "F", "I", "W", "UP", "B", "C4", "SIM", "T20", "ARG", "PTH",
+    "ERA", "PD", "PL", "TRY", "NPY", "RSE", "RET", "FLY", "INP", "ASYNC",
+]
+ignore = ["E501", "TRY003"]
+per-file-ignores = { "tests/*" = ["S101", "ERA001"] }
+exclude = [".git", "__pycache__", ".pytest_cache", "build", "dist", "*.egg-info", ".venv", "venv"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+strict_optional = true
+show_error_codes = true
+pretty = true
+namespace_packages = true
+explicit_package_bases = true
+enable_error_code = ["unused-ignore", "arg-type", "attr-defined"]
+
+[[tool.mypy.overrides]]
+module = "customtkinter.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tkinterdnd2.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "playwright.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "steameditor.ui.pages.*"
+ignore_missing_imports = true
+disallow_untyped_defs = false
+check_untyped_defs = false
+
+[tool.pyright]
+include = ["src"]
+exclude = ["**/node_modules", "**/__pycache__", "build", "dist", "src/steameditor/ui/pages", "src/steameditor/ui/components.py", "src/steameditor/ui/design_system.py", "src/steameditor/ui/app.py", "src/steameditor/services/worker_pool.py", "src/steameditor/services/image_cache.py", "src/steameditor/core/uploader.py", "src/steameditor/events.py"]
+typeCheckingMode = "strict"
+pythonVersion = "3.10"
+pythonPlatform = "Windows"
+reportMissingImports = true
+reportMissingTypeStubs = true
+reportUnknownMemberType = true
+reportUnknownVariableType = true
+reportUnknownParameterType = true
+reportUnknownArgumentType = true
+reportUnusedImport = true
+reportUnusedVariable = true
+reportUnnecessaryComparison = true
+reportUnnecessaryCast = true
+reportAssertAlwaysTrue = true
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/ui/pages/*.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/ui/components.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/ui/design_system.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/ui/app.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/services/worker_pool.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/services/image_cache.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/core/uploader.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/events.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/core/processor.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[tool.coverage.run]
+source = ["src/steameditor"]
+omit = ["tests/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.pre-commit-hooks]
+hooks = [
+    {id = "ruff", name = "ruff-check", entry = "ruff check", language = "python", types = ["python"]},
+    {id = "ruff-format", name = "ruff-format", entry = "ruff format", language = "python", types = ["python"]},
+    {id = "pyright", name = "pyright", entry = "pyright", language = "python", types = ["python"]},
+    {id = "pytest", name = "pytest", entry = "pytest", language = "python", types = ["python"]},
+]

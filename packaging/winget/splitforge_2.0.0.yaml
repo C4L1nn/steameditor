@@ -1,0 +1,44 @@
+{
+  "PackageIdentifier": "Aykut.SplitForge",
+  "PackageName": "SplitForge - Steam Showcase Studio",
+  "PackageVersion": "2.0.0",
+  "Publisher": "Aykut",
+  "PublisherUrl": "https://github.com/aykut/steameditor",
+  "PublisherSupportUrl": "https://github.com/aykut/steameditor/issues",
+  "Author": "Aykut",
+  "Description": "Professional desktop tool for creating Steam Workshop showcase images with automated upload",
+  "License": "MIT",
+  "LicenseUrl": "https://github.com/aykut/steameditor/blob/main/LICENSE",
+  "Copyright": "Copyright (c) 2024 Aykut",
+  "Tags": [
+    "steam",
+    "workshop",
+    "showcase",
+    "image",
+    "splitter",
+    "gaming",
+    "automation",
+    "graphics"
+  ],
+  "InstallModes": [
+    "interactive",
+    "silent",
+    "silentWithProgress"
+  ],
+  "Installers": [
+    {
+      "Architecture": "x64",
+      "InstallerType": "nsis",
+      "InstallerUrl": "https://github.com/aykut/steameditor/releases/download/v2.0.0/SplitForge_Setup_2.0.0.exe",
+      "InstallerSha256": "PLACEHOLDER_SHA256_HASH",
+      "Scope": "user",
+      "InstallerSwitches": {
+        "Silent": "/S",
+        "SilentWithProgress": "/S"
+      },
+      "UpgradeBehavior": "install"
+    }
+  ],
+  "ManifestType": "installer",
+  "ManifestVersion": "1.5.0"
+}

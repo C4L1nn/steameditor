@@ -1,0 +1,61 @@
+# WinGet Manifest for SplitForge
+# Version: 2.0.0
+# Run: winget install Aykut.SplitForge
+
+PackageIdentifier: Aykut.SplitForge
+PackageVersion: 2.0.0
+PackageName: SplitForge
+Publisher: Aykut
+PublisherUrl: https://github.com/aykut/steameditor
+PublisherSupportUrl: https://github.com/aykut/steameditor/issues
+Author: Aykut
+PackageUrl: https://github.com/aykut/steameditor
+License: MIT
+LicenseUrl: https://github.com/aykut/steameditor/blob/main/LICENSE
+Copyright: Copyright (c) 2024 Aykut
+CopyrightUrl: https://github.com/aykut/steameditor/blob/main/LICENSE
+ShortDescription: Steam Workshop showcase image splitter with automated upload
+Description: SplitForge is a professional desktop tool for creating Steam Workshop showcase images. It splits images into the exact pieces Steam requires (Workshop 5-part, Artwork 2-part, Screenshot single), applies effects (borders, text overlays, auto-enhance), and automates upload to Steam Community via Playwright browser automation.
+Moniker: splitforge
+Tags:
+- steam
+- workshop
+- showcase
+- image
+- splitter
+- gif
+- maker
+- upload
+- automation
+- screenshot
+- artwork
+
+Commands:
+- splitforge
+
+FileExtensions:
+- png
+- jpg
+- jpeg
+- webp
+- gif
+
+Protocols:
+- splitforge
+
+Installers:
+- Architecture: x64
+  InstallerType: exe
+  InstallerUrl: https://github.com/aykut/steameditor/releases/download/v2.0.0/SplitForge_Setup_2.0.0.exe
+  InstallerSha256: SHA256_CHECKSUM_PLACEHOLDER
+  InstallerSwitches:
+    Silent: /S
+    SilentWithProgress: /S
+  Scope: user
+  InstallerSwitches:
+    Custom: /D=%USERPROFILE%\AppData\Local\SplitForge
+  ProductCode: "{GUID_PLACEHOLDER}"
+
+PackageLocale: en-US
+ManifestType: installer
+ManifestVersion: 1.5.0

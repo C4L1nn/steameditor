@@ -1,0 +1,74 @@
+# Pre-commit hooks configuration
+
+repos:
+  # Code formatting & linting
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # Type checking
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: pyright
+        language: system
+        types: [python]
+        args: [src/steameditor/core, src/steameditor/services, src/steameditor/events.py, src/steameditor/exceptions.py]
+
+  # Security
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: [-r, src/, -ll, -f, txt]
+
+  # Secrets detection
+  - repo: https://github.com/trufflesecurity/trufflehog
+    rev: v3.63.2
+    hooks:
+      - id: trufflehog
+        args: [--fail, --no-verify]
+
+  # Commit message formatting
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.13.0
+    hooks:
+      - id: commitizen
+        stages: [commit-msg]
+
+  # Python-specific
+  - repo: https://github.com/psf/black
+    rev: 23.12.1
+    hooks:
+      - id: black
+        language_version: python3.11
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+
+  # Security - dependencies
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        additional_dependencies: [flake8-bandit, flake8-bugbear, flake8-docstrings]
+
+  # Prevent large files
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-case-conflict
+      - id: check-merge-conflict
+      - id: check-symlinks
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+      - id: trailing-whitespace
