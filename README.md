@@ -2,7 +2,7 @@
 
 > Professional desktop tool for creating Steam Workshop showcase images with automated upload.
 
-[![Version](https://img.shields.io/badge/version-2.2.0-blue.svg)](https://github.com/C4L1nn/steameditor/releases)
+[![Version](https://img.shields.io/badge/version-2.3.0-blue.svg)](https://github.com/C4L1nn/steameditor/releases)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://github.com/C4L1nn/steameditor/actions/workflows/ci.yml/badge.svg)](https://github.com/C4L1nn/steameditor/actions)

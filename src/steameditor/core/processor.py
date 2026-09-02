@@ -299,6 +299,24 @@ def _border_cfg_enabled(cfg: dict | None) -> bool:
     return bool(name and os.path.isfile(os.path.join(_BORDER_DIR, name)))
 
 
+_BORDER_CACHE: dict[tuple[str, tuple[int, int]], Image.Image] = {}
+_BORDER_CACHE_MAX = 8
+
+
+def _get_cached_border(path: str, size: tuple[int, int]) -> Image.Image:
+    key = (path, size)
+    cached = _BORDER_CACHE.get(key)
+    if cached is not None:
+        return cached
+    # Load and resize, cache with LRU eviction
+    img = Image.open(path).convert("RGBA").resize(size, Image.LANCZOS)
+    if len(_BORDER_CACHE) >= _BORDER_CACHE_MAX:
+        # Remove oldest (first inserted)
+        _BORDER_CACHE.pop(next(iter(_BORDER_CACHE)))
+    _BORDER_CACHE[key] = img
+    return img
+
+
 def apply_border_fx(img: Image.Image, cfg: dict | None) -> Image.Image:
     """Border Templates içindeki PNG'yi görselin üstüne renk/glow ile bindirir."""
     if not _border_cfg_enabled(cfg):
@@ -307,7 +325,7 @@ def apply_border_fx(img: Image.Image, cfg: dict | None) -> Image.Image:
     path = os.path.join(_BORDER_DIR, cfg.get("border_fx_template", ""))
     try:
         base = img.convert("RGBA")
-        border = Image.open(path).convert("RGBA").resize(base.size, Image.LANCZOS)
+        border = _get_cached_border(path, base.size)
         opacity = max(0, min(100, _parse_int_safe(cfg.get("border_fx_opacity"), 100))) / 100.0
         glow = max(0, min(100, _parse_int_safe(cfg.get("border_fx_glow"), 0))) / 100.0
         color = _parse_hex_color(cfg.get("border_fx_color", "#8B5CF6"))

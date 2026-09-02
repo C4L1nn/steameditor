@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.3.0] - 2026-09-02
+
+### ✨ Added — UI Yenileme / Performans / Yeni Efekt
+- **Hologram Efekt** `GIF/gif.py:149` 13. efekt (`hologram`): `neon`+`cyber_glitch` karışımı holografik grid + chromatic shift + bloom, `GIF/gif.py:1553` border renk `(6,182,212)/(236,72,153)`, `GIF/gif.py:1928` ffmpeg `hologram` filtresi, animated scanline
+- **UI Yenileme** `ui/design_system.py:111` LightColors + proxy, `ui/app_shell.py:471` `🌙/☀️` toggle + `Ctrl+T`, `ui/app.py:692` saved theme ile `apply_theme`
+- **Performans** `core/processor.py:302` `_BORDER_CACHE` LRU 8, `GIF/gif.py:1708` `_GIF_BORDER_CACHE` 6, `GIF/gif.py:28` `_optimal_threads()` dynamic (2-8), `GIF/gif.py:2027` `scale=accurate_rnd+full_chroma_int`, `GIF/gif.py:2037` palette granular (`bayer_scale=2`), `GIF/gif.py:2325` threads dynamic
+
 ## [2.2.0] - 2026-09-02
 
 ### ✨ Added — Cloud Sync / Export

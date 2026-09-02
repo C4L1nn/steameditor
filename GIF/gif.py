@@ -171,6 +171,7 @@ EFFECT_PRESETS = {
     "Cyber Glitch": "cyber_glitch",
     "VHS Horror": "vhs_horror",
     "Inferno Ember": "inferno_ember",
+    "Hologram": "hologram",
 }
 
 EFFECT_DESCRIPTIONS = {
@@ -187,13 +188,14 @@ EFFECT_DESCRIPTIONS = {
     "Cyber Glitch": "RGB glitch",
     "VHS Horror": "Karanlık VHS",
     "Inferno Ember": "Alev parçacığı",
+    "Hologram": "Holografik parıltı",
 }
 
 EFFECT_GROUPS = {
     "Look": ["Efekt yok", "Sinema vignette", "Karanlik glow"],
     "Aura": ["Neon mor kenarlik", "Purple Soul", "Blue Lightning", "Golden Divine"],
     "Dark": ["Blood Curse", "VHS Horror", "Inferno Ember"],
-    "FX": ["Ice Mist", "Cyber Glitch", "VHS / scanline"],
+    "FX": ["Ice Mist", "Cyber Glitch", "VHS / scanline", "Hologram"],
 }
 
 USER_PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "effect_presets.json")
@@ -1605,6 +1607,7 @@ def _effect_border_colors(effect):
         "cyber_glitch": ((34, 211, 238), (236, 72, 153)),
         "vhs_horror": ((127, 29, 29), (255, 255, 255)),
         "inferno_ember": ((234, 88, 12), (253, 186, 116)),
+        "hologram": ((6, 182, 212), (236, 72, 153)),
     }.get(effect, ((46, 46, 46), (46, 46, 46)))
 
 
@@ -1702,6 +1705,21 @@ def _template_alpha_mask(template):
     return gray.point(lambda p: 0 if p > 245 else 255)
 
 
+_GIF_BORDER_CACHE: dict[tuple[str, tuple[int, int]], Image.Image] = {}
+
+
+def _get_gif_border(path: str, size: tuple[int, int]) -> Image.Image:
+    key = (path, size)
+    c = _GIF_BORDER_CACHE.get(key)
+    if c is not None:
+        return c
+    img = Image.open(path).convert("RGBA").resize(size, Image.LANCZOS)
+    if len(_GIF_BORDER_CACHE) >= 6:
+        _GIF_BORDER_CACHE.pop(next(iter(_GIF_BORDER_CACHE)))
+    _GIF_BORDER_CACHE[key] = img
+    return img
+
+
 def _apply_border_template(img, template_name, color, glow_strength=0.45, opacity=1.0):
     if not template_name or template_name == BORDER_TEMPLATE_NONE:
         return img
@@ -1710,7 +1728,7 @@ def _apply_border_template(img, template_name, color, glow_strength=0.45, opacit
         return img
     try:
         base = img.convert("RGBA")
-        template = Image.open(path).convert("RGBA").resize(base.size, Image.LANCZOS)
+        template = _get_gif_border(path, base.size)
         mask = _template_alpha_mask(template)
         opacity = max(0.0, min(1.0, float(opacity or 1.0)))
         glow_strength = max(0.0, min(1.0, float(glow_strength or 0.0)))
@@ -1912,6 +1930,33 @@ def _apply_effect_to_image(img, sharpen, effect="none", border=0, glow=0,
         img = _apply_vignette(img, 0.18 + vignette_fx * 0.42)
         border_color = (234, 88, 12)
         inner_color = (253, 186, 116)
+    elif effect == "hologram":
+        img = ImageEnhance.Contrast(img).enhance(1.14)
+        img = ImageEnhance.Color(img).enhance(1.22)
+        img = ImageEnhance.Brightness(img).enhance(1.05)
+        img = _chromatic_shift(img, 2 + int(intensity * 5))
+        img = _draw_scanlines(img, 2, int(6 + particle_fx * 18), (6, 182, 212))
+        img = _bloom_image(img, 0.14 + bloom_fx * 0.28, 6 + bloom_fx * 14, 1.45)
+        # Hologram grid overlay
+        overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        draw = ImageDraw.Draw(overlay)
+        rng = random.Random(909)
+        step = max(12, img.width // 22)
+        for x in range(0, img.width, step):
+            draw.line((x, 0, x, img.height), fill=(6, 182, 212, int(8 + particle_fx * 22)), width=1)
+        for y in range(0, img.height, step):
+            draw.line((0, y, img.width, y), fill=(236, 72, 153, int(6 + particle_fx * 16)), width=1)
+        # Flicker particles
+        for _ in range(6 + int(particle_fx * 24)):
+            x = rng.randint(0, max(1, img.width - 1))
+            y = rng.randint(0, max(1, img.height - 1))
+            r = rng.randint(1, 3)
+            draw.ellipse((x - r, y - r, x + r, y + r), fill=(255, 255, 255, rng.randint(60, 140)))
+        img = Image.alpha_composite(img.convert("RGBA"), overlay.filter(ImageFilter.GaussianBlur(0.3))).convert("RGB")
+        img = _tint_image(img, (6, 182, 212), 0.06 + intensity * 0.10)
+        img = _apply_vignette(img, 0.14 + vignette_fx * 0.32)
+        border_color = (6, 182, 212)
+        inner_color = (236, 72, 153)
     else:
         border_color = (46, 46, 46)
         inner_color = (46, 46, 46)
@@ -2035,6 +2080,16 @@ def _extra_filters(sharpen, smooth, effect="none", border=0, glow=0,
         if border:
             f.append(f"drawbox=x=0:y=0:w=iw:h=ih:color=#ea580c@0.92:t={border}")
             f.append(f"drawbox=x={border * 2}:y={border * 2}:w=iw-{border * 4}:h=ih-{border * 4}:color=#fdba74@0.50:t=2")
+    elif effect == "hologram":
+        f.append(f"eq=contrast=1.14:brightness=0.015:saturation={1.18 + glow * 0.28:.2f}:gamma=1.03")
+        f.append("colorbalance=rs=-0.06:gs=0.04:bs=0.14")
+        f.append("hue=h=4*sin(2*PI*t*1.2):s=1.08")
+        f.append("noise=alls=2:allf=t+u")
+        f.append("drawgrid=w=iw/22:h=ih/22:t=1:c=#06b6d4@0.06")
+        f.append(f"vignette=PI/{max(4.0, 7.0 - vignette * 0.03):.2f}")
+        if border:
+            f.append(f"drawbox=x=0:y=0:w=iw:h=ih:color=#06b6d4@0.92:t={border}")
+            f.append(f"drawbox=x={border * 2}:y={border * 2}:w=iw-{border * 4}:h=ih-{border * 4}:color=#ec4899@0.55:t=2")
     return ",".join(f)
 
 
@@ -2113,7 +2168,7 @@ def _animated_effect_frame(base, frame_idx, frame_count, fps, sharpen, effect="n
     draw = ImageDraw.Draw(overlay)
     rng = random.Random(7300 + frame_idx * 97)
 
-    if effect in {"vhs", "vhs_horror", "cyber_glitch", "blood_curse", "blue_lightning", "inferno_ember"}:
+    if effect in {"vhs", "vhs_horror", "cyber_glitch", "blood_curse", "blue_lightning", "inferno_ember", "hologram"}:
         offset = int((frame_idx * 2) % 6)
         alpha = 18 + min(45, particles // 2)
         for y in range(offset, img.height, 4):

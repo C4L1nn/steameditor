@@ -17,7 +17,7 @@ ROOT = Path(__file__).parent.parent.parent / "src"
 
 # App metadata
 APP_NAME = "SplitForge"
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 APP_AUTHOR = "Aykut"
 APP_DESCRIPTION = "Steam Showcase Studio - Professional Steam Workshop image splitter"
 
