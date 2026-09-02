@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import io
 import json
 import os
 import sys
@@ -310,6 +312,78 @@ def wait_for_steam_login(page):
         return
     _get_logger().info("Steam login page detected. Please log in to continue.")
     page.wait_for_url(lambda url: "login" not in url.lower(), timeout=10 * 60 * 1000)
+
+
+def capture_steam_showcase_preview(
+    piece_paths: list[Path | str],
+    parts_per_row: int = 5,
+    timeout_ms: int = 15000,
+) -> "Image.Image | None":
+    """Gerçek Steam vitrin DOM'u ile canlı önizleme — Playwright headless.
+
+    Parçaları Steam profil vitrinini taklit eden minimal HTML'e inject edip
+    screenshot alır. Playwright yoksa veya hata olursa None döner (fallback
+    `render_showcase_preview` kullanılsın).
+    """
+    if not piece_paths:
+        return None
+    try:
+        from playwright.sync_api import sync_playwright
+        from PIL import Image
+    except Exception as e:
+        _get_logger().debug(f"Live preview: playwright/PIL yok: {e}")
+        return None
+
+    # Encode images to data URLs (avoid file:// CORS)
+    data_urls: list[str] = []
+    for p in piece_paths:
+        try:
+            with open(p, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+            ext = Path(p).suffix.lower().lstrip(".") or "png"
+            if ext == "jpg":
+                ext = "jpeg"
+            data_urls.append(f"data:image/{ext};base64,{b64}")
+        except Exception as e:
+            _get_logger().warning(f"Live preview encode hatası {p}: {e}")
+            return None
+
+    parts_per_row = max(1, int(parts_per_row))
+    # Steam vitrin CSS'i taklit eden minimal HTML
+    # Gerçek Steam: .workshopShowcase, gap 4px, bg #171a21, radius 4px
+    html = f"""<!DOCTYPE html><html><head><meta charset='utf-8'>
+    <style>
+      body{{margin:0;padding:24px;background:#171a21;font-family:Arial,sans-serif}}
+      .header{{color:#66c0f4;font-size:14px;margin-bottom:12px;letter-spacing:1px}}
+      .showcase{{background:#1b2838;border-radius:4px;padding:16px;box-shadow:0 0 8px #0008}}
+      .grid{{display:grid;grid-template-columns:repeat({parts_per_row},1fr);gap:4px}}
+      .grid img{{width:100%;height:auto;display:block;border-radius:2px;background:#0f141f}}
+      .footer{{color:#8f98a0;font-size:11px;margin-top:12px;text-align:center}}
+    </style></head><body>
+      <div class='header'>ATÖLYE VİTRİNİ — CANLI ÖNİZLEME</div>
+      <div class='showcase'><div class='grid'>
+        {''.join(f"<img src='{u}'/>" for u in data_urls)}
+      </div></div>
+      <div class='footer'>Steam profil vitrini simülasyonu — yüklemeden önce kontrol</div>
+    </body></html>"""
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            ctx = browser.new_context(viewport={"width": 920, "height": 700})
+            page = ctx.new_page()
+            page.set_content(html, wait_until="networkidle", timeout=timeout_ms)
+            # Grid'e odaklı screenshot
+            loc = page.locator(".showcase")
+            # loc.screenshot yerine page screenshot + crop daha stabil
+            png_bytes = loc.screenshot(timeout=timeout_ms)
+            browser.close()
+            img = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+            _get_logger().info(f"Live Steam preview captured: {img.size}")
+            return img
+    except Exception as e:
+        _get_logger().warning(f"Live preview captura hatası: {e}")
+        return None
 
 
 # ════════════════════════════════════════════════════════════════════

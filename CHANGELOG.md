@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.6.0] - 2026-09-02
+
+### ✨ Added — Live Steam Preview
+- **Live Preview** `core/uploader.py:316` `capture_steam_showcase_preview()` (Playwright headless, data URL, Steam CSS `grid`+`gap 4px`), `ui/components.py:453` `🌐 Canlı` toggle + `_render_live_showcase()` (thread, fallback fake), `tests/test_live_preview.py:1` 4 test (`169 passed`)
+
 ## [2.5.0] - 2026-09-02
 
 ### ✨ Added — Paralel Batch

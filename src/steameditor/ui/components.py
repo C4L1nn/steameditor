@@ -451,8 +451,13 @@ class SplitPreview(ctk.CTkFrame):
                        text_color=COLORS.text_inverse, command=self._on_upload).pack(side="right", padx=4)
 
         self._view_btn = AnimButton(right_actions, text="🎮 Vitrin", nc=COLORS.bg_3, hc=COLORS.info, height=28, corner_radius=6,
-                                    font=make_font(TYPO.body_md), text_color=COLORS.text_primary, command=self._toggle_view)
+                                     font=make_font(TYPO.body_md), text_color=COLORS.text_primary, command=self._toggle_view)
         self._view_btn.pack(side="right", padx=4)
+
+        self._live_btn = AnimButton(right_actions, text="🌐 Canlı", nc=COLORS.bg_3, hc=COLORS.success, height=28, corner_radius=6,
+                                     font=make_font(TYPO.body_sm), text_color=COLORS.text_primary, command=self._toggle_live)
+        self._live_btn.pack(side="right", padx=4)
+        self._live_mode = False
 
         # Grid view (horizontal scroll)
         self._scroll = ctk.CTkScrollableFrame(
@@ -505,6 +510,10 @@ class SplitPreview(ctk.CTkFrame):
         if not self._file_paths:
             self._showcase_lbl.configure(image=None, text="Gösterilecek parça yok")
             return
+        # If live mode active, delegate
+        if getattr(self, "_live_mode", False):
+            self._render_live_showcase()
+            return
         try:
             from steameditor.core.processor import render_showcase_preview
             sim = render_showcase_preview(self._file_paths, self._parts_per_row)
@@ -517,6 +526,54 @@ class SplitPreview(ctk.CTkFrame):
             self._showcase_lbl._image = ctk_img
         except Exception as e:
             self._showcase_lbl.configure(image=None, text=f"Vitrin hatası: {e}")
+
+    def _toggle_live(self):
+        self._live_mode = not getattr(self, "_live_mode", False)
+        try:
+            self._live_btn.configure(text="🌐 Canlı ✓" if self._live_mode else "🌐 Canlı")
+        except Exception:
+            pass
+        if not self._showcase_mode:
+            # Switch to showcase view
+            self._showcase_mode = True
+            try:
+                self._scroll.pack_forget()
+                self._showcase.pack(fill="both", expand=True, padx=10, pady=10)
+                self._view_btn.configure(text="▤ Parçalar")
+            except Exception:
+                pass
+        if self._live_mode:
+            self._render_live_showcase()
+        else:
+            self._render_showcase()
+
+    def _render_live_showcase(self):
+        if not self._file_paths:
+            self._showcase_lbl.configure(image=None, text="Gösterilecek parça yok")
+            return
+        self._showcase_lbl.configure(image=None, text="🌐 Canlı Steam önizleme alınıyor... (Playwright)")
+        import threading
+
+        def worker():
+            try:
+                from steameditor.core.uploader import capture_steam_showcase_preview
+
+                img = capture_steam_showcase_preview(self._file_paths, self._parts_per_row)
+                if img is None:
+                    raise RuntimeError("Playwright yok veya hata — fake vitrine dönülüyor")
+                avail = max(400, self.winfo_width() - 60)
+                if img.width > avail:
+                    scale = avail / img.width
+                    img = img.resize((avail, max(1, int(img.height * scale))), Image.LANCZOS)
+                ctk_img = make_ctk_image(img)
+                self.after(0, lambda: (self._showcase_lbl.configure(image=ctk_img, text=""), setattr(self._showcase_lbl, "_image", ctk_img)))
+            except Exception as e:
+                err = str(e)
+                self.after(0, lambda: self._showcase_lbl.configure(image=None, text=f"Canlı önizleme hatası: {err}\n(Fake vitrine dönülüyor)"))
+                # Fallback to fake after 1s
+                self.after(1200, lambda: self._render_showcase() if not getattr(self, "_live_mode", False) else None)
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def load(self, file_paths: list, parts_per_row: int | None = None):
         """Load and display split parts."""
