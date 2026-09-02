@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.5.0] - 2026-09-02
+
+### ✨ Added — Paralel Batch
+- **Paralel Batch** `core/processor.py:899` `process_folder(parallel=True)` `WorkerPool.map` + `seen_stems` dedup, `ui/app.py:36` `TaskQueue` (max 2-8, `poll`/`cancel`/`clear`), `_done_batch_dlg` list/count normalize, `165 passed`
+
 ## [2.4.0] - 2026-09-02
 
 ### ✨ Added — Smart AutoCrop

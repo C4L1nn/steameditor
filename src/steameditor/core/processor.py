@@ -896,14 +896,70 @@ def process_image(path: str, outdir: str, template: dict, cfg: dict | None = Non
     return created
 
 
-def process_folder(folder: str, outdir: str, template: dict, cfg: dict | None = None):
-    created = []
-    for f in os.listdir(folder):
-        if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif")):
-            created.extend(
-                process_image(os.path.join(folder, f), outdir, template, cfg)
-            )
-    return created
+def process_folder(folder: str, outdir: str, template: dict, cfg: dict | None = None, parallel: bool = True):
+    """Klasördeki tüm görselleri işle. parallel=True ise WorkerPool ile paralel."""
+    files = [
+        os.path.join(folder, f)
+        for f in os.listdir(folder)
+        if f.lower().endswith((".png", ".jpg", ".jpeg", ".webp", ".gif"))
+    ]
+    if not files:
+        return []
+    if not parallel or len(files) == 1:
+        created = []
+        seen: dict[str, int] = {}
+        for path in files:
+            stem = os.path.splitext(os.path.basename(path))[0]
+            key = stem.lower()
+            cnt = seen.get(key, 0)
+            seen[key] = cnt + 1
+            override = stem if cnt == 0 else f"{stem}_{cnt+1}"
+            try:
+                created.extend(process_image(path, outdir, template, cfg, name_override=override))
+            except Exception as e:
+                _log.error(f"[FOLDER ERR] {path} | {e}")
+        return created
+
+    # Parallel — seen_stems still need sequential naming
+    seen: dict[str, int] = {}
+    tasks: list[tuple[str, str]] = []  # (path, override)
+    for path in files:
+        stem = os.path.splitext(os.path.basename(path))[0]
+        key = stem.lower()
+        cnt = seen.get(key, 0)
+        seen[key] = cnt + 1
+        override = stem if cnt == 0 else f"{stem}_{cnt+1}"
+        tasks.append((path, override))
+
+    try:
+        from steameditor.services.worker_pool import get_worker_pool
+
+        pool = get_worker_pool()
+
+        def _task(args: tuple[str, str]) -> list[str]:
+            p, ov = args
+            try:
+                return process_image(p, outdir, template, cfg, name_override=ov)
+            except Exception as e:
+                _log.error(f"[FOLDER PARALLEL ERR] {p} | {e}")
+                return []
+
+        results = pool.map(_task, tasks)
+        # results is list[TaskResult]; each result.result is list[str]
+        created = []
+        for r in results:
+            if r.success and r.result:
+                created.extend(r.result)
+        return created
+    except Exception as e:
+        _log.warning(f"[FOLDER] parallel fallback to sequential: {e}")
+        created = []
+        for path, override in tasks:
+            try:
+                created.extend(process_image(path, outdir, template, cfg, name_override=override))
+            except Exception as ex:
+                _log.error(f"[FOLDER ERR] {path} | {ex}")
+        return created
 
 # ==========================================================
 #   MANUAL CROP WITH TEMPLATE (interactive grid)

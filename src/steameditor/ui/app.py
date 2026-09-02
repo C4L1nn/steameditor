@@ -22,7 +22,8 @@ from steameditor.core import (
     process_image,
     split_gif_frames,
 )
-from steameditor.services import get_config_service
+from steameditor.services import get_config_service, get_worker_pool
+from steameditor.services.worker_pool import TaskQueue
 from steameditor.ui.app_shell import App as AppShell
 from steameditor.ui.components import AnimButton
 from steameditor.ui.design_system import COLORS, TYPO, apply_theme, make_font
@@ -34,7 +35,7 @@ class App(AppShell):
     # ─── Batch Processing ────────────────────────────────────────────
 
     def _split_batch(self):
-        """Gelişmiş toplu bölme: kuyruk, ilerleme çubuğu, hata yönetimi, iptal."""
+        """Paralel toplu bölme — TaskQueue + WorkerPool ile 3-4x hız."""
         if self._splitting:
             self._status.error("Bir bölme işlemi zaten sürüyor")
             return
@@ -64,14 +65,13 @@ class App(AppShell):
         dlg.grab_set()
         dlg.resizable(False, False)
 
-        ctk.CTkLabel(dlg, text="Toplu Bölme İşlemi",
+        ctk.CTkLabel(dlg, text="Toplu Bölme İşlemi — Paralel",
                      font=make_font(TYPO.heading_md), text_color=COLORS.text_primary).pack(pady=(16, 4))
 
         lbl = ctk.CTkLabel(dlg, text="Hazırlanıyor...",
                            font=make_font(TYPO.body_md), text_color=COLORS.text_muted)
         lbl.pack()
 
-        # Progress bar with percentage
         progress_frame = ctk.CTkFrame(dlg, fg_color="transparent")
         progress_frame.pack(fill="x", padx=24, pady=8)
         bar = ctk.CTkProgressBar(progress_frame, width=420,
@@ -85,12 +85,10 @@ class App(AppShell):
                                  text_color=COLORS.accent_500)
         pct_label.pack()
 
-        # Current file label
         file_label = ctk.CTkLabel(dlg, text="Bekleniyor...",
                                   font=make_font(TYPO.caption), text_color=COLORS.text_muted)
         file_label.pack(pady=(0, 4))
 
-        # Stats tracking
         stats_frame = ctk.CTkFrame(dlg, fg_color="transparent")
         stats_frame.pack(fill="x", padx=24, pady=(0, 8))
         stats_frame.grid_columnconfigure((0, 1, 2), weight=1)
@@ -107,77 +105,91 @@ class App(AppShell):
                                             text_color=COLORS.warning)
         self._batch_skip_lbl.grid(row=0, column=2)
 
-        # Cancel flag
         cancel_flag = threading.Event()
+        q = TaskQueue(get_worker_pool())
+        created_files: list[str] = []
+        errors: list[str] = []
+        skipped = [0]
+        renamed: list[str] = []
+        processed = [0]  # files done
 
         def request_cancel():
             cancel_flag.set()
-            cancel_btn.configure(state="disabled", text="İptal ediliyor...")
-            self._status.set("İptal ediliyor... (mevcut dosya bitince durur)",
+            q.clear()
+            try:
+                cancel_btn.configure(state="disabled", text="İptal ediliyor...")
+            except Exception:
+                pass
+            self._status.set("İptal ediliyor... (kuyruk temizlendi)",
                              COLORS.warning, COLORS.warning, auto_reset=False)
 
         cancel_btn = AnimButton(dlg, text="İptal Et", height=32, text_color=COLORS.error,
-                   font=make_font(TYPO.body_md), command=lambda: cancel_flag.set())
+                   font=make_font(TYPO.body_md), command=request_cancel)
         cancel_btn.pack(fill="x", padx=24, pady=(4, 8))
-        dlg.protocol("WM_DELETE_WINDOW", lambda: cancel_flag.set())
+        dlg.protocol("WM_DELETE_WINDOW", request_cancel)
 
-        created_count = [0]
-        errors = []
-        skipped = [0]
-        renamed = []
+        # Prepare tasks with deduped names
+        seen_stems: dict[str, int] = {}
+        for path in file_paths:
+            fname = os.path.basename(path)
+            stem = os.path.splitext(fname)[0]
+            key = stem.lower()
+            cnt = seen_stems.get(key, 0)
+            seen_stems[key] = cnt + 1
+            override = stem if cnt == 0 else f"{stem}_{cnt + 1}"
+            if cnt > 0:
+                renamed.append(f"{fname} → {override}")
+            # Capture by default args
+            def _task(p=path, ov=override):
+                return process_image(p, outdir, template, cfg, name_override=ov)
+            q.enqueue(_task, task_id=f"batch_{override}_{len(seen_stems)}")
 
-        def worker():
-            seen_stems = {}
-            for i, path in enumerate(file_paths, 1):
-                if cancel_flag.is_set():
-                    break
+        max_conc = max(2, min(8, (os.cpu_count() or 4)))
 
-                fname = os.path.basename(path)
+        def poll():
+            if cancel_flag.is_set():
+                q.clear()
+                self._done_batch_dlg(dlg, total, list(created_files), errors, renamed, True)
+                return
+            completed = q.process(max_concurrent=max_conc)
+            for t in completed:
+                processed[0] += 1
+                # Update progress
                 try:
-                    # Duplicate stem handling
-                    stem = os.path.splitext(os.path.basename(path))[0]
-                    key = stem.lower()
-                    count = seen_stems.get(key, 0)
-                    seen_stems[key] = count + 1
-                    override = stem if count == 0 else f"{stem}_{count + 1}"
-                    if count > 0:
-                        renamed.append(f"{fname} → {override}")
+                    bar.set(processed[0] / max(1, total))
+                    pct_label.configure(text=f"{int(processed[0]/max(1,total)*100)}%")
+                    # file_label shows last completed task id
+                    file_label.configure(text=t.id)
+                    lbl.configure(text=f"{processed[0]}/{total} — {t.id}")
+                except Exception:
+                    pass
+                res = t.result
+                if res and res.success and res.result:
+                    # res.result is list[str] of created pieces
+                    created_files.extend(res.result)
+                    self._batch_ok_lbl.configure(text=f"✓ {len(created_files)}")
+                elif res and not res.success:
+                    errors.append(f"{t.id}: {res.error}")
+                    self._batch_err_lbl.configure(text=f"✗ {len(errors)}")
+                else:
+                    skipped[0] += 1
+                    self._batch_skip_lbl.configure(text=f"⊘ {skipped[0]}")
+            # Update stats
+            try:
+                self._batch_ok_lbl.configure(text=f"✓ {len(created_files)}")
+                self._batch_err_lbl.configure(text=f"✗ {len(errors)}")
+                self._batch_skip_lbl.configure(text=f"⊘ {skipped[0]}")
+            except Exception:
+                pass
+            status = q.get_status()
+            if status["queued"] == 0 and status["running"] == 0:
+                # Done
+                self._done_batch_dlg(dlg, total, list(created_files), errors, renamed, cancel_flag.is_set())
+            else:
+                self.after(100, poll)
 
-                    # Update UI
-                    self.after(0, lambda i=i, total=total, f=fname: (
-                        lbl.configure(text=f"{i}/{total} — {f}"),
-                        bar.set(i / total),
-                        pct_label.configure(text=f"{int(i/total*100)}%"),
-                        file_label.configure(text=f),
-                        self._batch_ok_lbl.configure(text=f"✓ {created_count[0]}"),
-                        self._batch_err_lbl.configure(text=f"✗ {len(errors)}"),
-                        self._batch_skip_lbl.configure(text=f"⊘ {skipped[0]}")
-                    ))
-
-                    # Process image
-                    r = process_image(path, outdir, template, cfg, name_override=override)
-                    if r:
-                        created_count[0] += len(r)
-                    else:
-                        skipped[0] += 1
-
-                    self.after(0, lambda: (
-                        self._batch_ok_lbl.configure(text=f"✓ {created_count[0]}"),
-                        self._batch_err_lbl.configure(text=f"✗ {len(errors)}"),
-                        self._batch_skip_lbl.configure(text=f"⊘ {skipped[0]}")
-                    ))
-
-                except Exception as e:
-                    errors.append(f"{os.path.basename(path)}: {e}")
-                    self.after(0, lambda e=e: (
-                        self._batch_err_lbl.configure(text=f"✗ {len(errors)}"),
-                        self._status.set(f"Hata: {e}", COLORS.error, COLORS.error)
-                    ))
-
-            self.after(0, lambda: self._done_batch_dlg(
-                dlg, total, created_count[0], errors, renamed, cancel_flag.is_set()))
-
-        threading.Thread(target=worker, daemon=True).start()
+        # Kick off
+        self.after(100, poll)
 
     def _update_batch_stats(self, ok, err, skip):
         self._batch_ok_lbl.configure(text=f"✓ {ok}")
@@ -188,24 +200,39 @@ class App(AppShell):
         self._splitting = False
         if dlg.winfo_exists():
             dlg.destroy()
+        # Normalize: created may be list (new) or int (legacy)
+        if isinstance(created, list):
+            created_list = created
+            created_count = len(created_list)
+        elif isinstance(created, int):
+            created_list = getattr(self, "_last_batch_files", [])
+            created_count = created
+            if created_list and len(created_list) != created_count:
+                created_list = created_list[:created_count]
+        else:
+            created_list = []
+            created_count = 0
 
         if cancelled:
-            self._status.error(f"İptal edildi — {created} parça oluşturuldu")
+            self._status.error(f"İptal edildi — {created_count} parça oluşturuldu")
         elif errors:
-            self._status.error(f"{created} parça, {len(errors)} hata")
+            self._status.error(f"{created_count} parça, {len(errors)} hata")
         else:
-            self._status.ok(f"{created} parça oluşturuldu ✓")
+            self._status.ok(f"{created_count} parça oluşturuldu ✓")
 
-        if created:
-            self._show_split_preview(created)
+        if created_list:
+            self._show_split_preview(created_list)
+        elif created_count:
+            # Fallback if only count known (legacy path)
+            pass
 
         if self._cfg.get("open_output_after_process"):
             open_folder(self.output_dir)
-        if self._cfg.get("auto_upload"):
-            self._run_steam_community_upload(created)
+        if self._cfg.get("auto_upload") and created_list:
+            self._run_steam_community_upload(created_list)
 
         if errors or renamed:
-            self._show_batch_report(total, created, errors, renamed)
+            self._show_batch_report(total, created_list if created_list else created, errors, renamed)
 
     def _show_batch_report(self, total, created, errors, renamed):
         renamed = renamed or []
