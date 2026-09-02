@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import threading
-import weakref
 from pathlib import Path
 from typing import Optional
 
@@ -21,7 +20,7 @@ def _get_logger():
 
 
 class ImageCache:
-    """Thread-safe LRU image cache with size limit."""
+    """Thread-safe LRU image cache with size limit (strong refs)."""
 
     _instance: ImageCache | None = None
     _lock = threading.Lock()
@@ -35,21 +34,17 @@ class ImageCache:
 
     def _init(self, max_size_mb: int):
         self.max_bytes = max_size_mb * 1024 * 1024
-        self._cache: dict[str, weakref.ref] = {}
+        self._cache: dict[str, Image.Image] = {}
         self._sizes: dict[str, int] = {}
         self._access_order: list[str] = []
         self._lock = threading.RLock()
 
     def get(self, path: str | Path, max_size: tuple[int, int] | None = None) -> Optional[Image.Image]:
-        """Get image from cache, optionally resized."""
+        """Get image from cache, optionally resized (returns copy if resized)."""
         path_str = str(path)
         with self._lock:
-            ref = self._cache.get(path_str)
-            if ref is None:
-                return None
-            img = ref()
+            img = self._cache.get(path_str)
             if img is None:
-                self._evict(path_str)
                 return None
             # Move to front (LRU)
             if path_str in self._access_order:
@@ -57,18 +52,28 @@ class ImageCache:
             self._access_order.insert(0, path_str)
 
             if max_size:
-                img = img.copy()
-                img.thumbnail(max_size, Image.LANCZOS)
-            return img
+                # Return resized copy, keep original in cache
+                copy = img.copy()
+                copy.thumbnail(max_size, Image.LANCZOS)
+                return copy
+            return img.copy() if hasattr(img, "copy") else img
 
     def put(self, path: str | Path, img: Image.Image) -> None:
-        """Add image to cache."""
+        """Add image to cache (stores copy to avoid external mutation)."""
         path_str = str(path)
         # Estimate memory: width * height * 4 (RGBA)
         size = img.width * img.height * 4
         with self._lock:
+            # If already cached, remove old position first
+            if path_str in self._cache:
+                self._evict(path_str)
             self._evict_until_space(size)
-            self._cache[path_str] = weakref.ref(img)
+            # Store a copy so external close/resize doesn't corrupt cache
+            try:
+                stored = img.copy()
+            except Exception:
+                stored = img
+            self._cache[path_str] = stored
             self._sizes[path_str] = size
             self._access_order.insert(0, path_str)
 
@@ -112,13 +117,20 @@ _thumbnail_cache: ImageCache | None = None
 _thumb_lock = threading.Lock()
 
 
+def _create_thumbnail_cache() -> ImageCache:
+    """Create independent 100MB cache bypassing main singleton."""
+    obj = object.__new__(ImageCache)
+    obj._init(100)  # type: ignore
+    return obj
+
+
 def get_thumbnail(path: str | Path, size: tuple[int, int] = (256, 256)) -> Image.Image:
     """Get or generate thumbnail for an image/GIF."""
     global _thumbnail_cache
     if _thumbnail_cache is None:
         with _thumb_lock:
             if _thumbnail_cache is None:
-                _thumbnail_cache = ImageCache(100)  # 100MB for thumbnails
+                _thumbnail_cache = _create_thumbnail_cache()
 
     cached = _thumbnail_cache.get(path, size)
     if cached:

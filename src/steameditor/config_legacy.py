@@ -108,13 +108,25 @@ TEMPLATE_SNIPPET_HINTS = {
 #   PRESET JSON — Yükleme / Kaydetme
 # ==========================================================
 
-_PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_presets.json")
+def _resolve_legacy_file(filename: str) -> str:
+    """Dosyayı önce src/steameditor içinde, yoksa proje kökünde ara (çift layout uyumu)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    proj_root = os.path.abspath(os.path.join(here, "..", ".."))
+    # Öncelik: proje kökü (legacy) — mevcut kullanıcı verisi orada
+    for base in (proj_root, here):
+        cand = os.path.join(base, filename)
+        if os.path.exists(cand):
+            return cand
+    # Hiçbiri yoksa proje köküne yaz (legacy varsayılan)
+    return os.path.join(proj_root, filename)
+
+_PRESETS_FILE = _resolve_legacy_file("steam_splitter_presets.json")
 
 
-_CONFIG_FILE  = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_config.json")
+_CONFIG_FILE  = _resolve_legacy_file("steam_splitter_config.json")
 
 
-_PROFILES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_profiles.json")
+_PROFILES_FILE = _resolve_legacy_file("steam_splitter_profiles.json")
 
 PROFILE_KEYS = (
     "autocrop_enabled",
@@ -127,7 +139,7 @@ PROFILE_KEYS = (
 )
 
 
-_PROJECTS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_projects.json")
+_PROJECTS_FILE = _resolve_legacy_file("steam_splitter_projects.json")
 
 
 def load_custom_presets():
@@ -249,7 +261,7 @@ def save_projects(projects: dict):
         _log.error(f"[PROJECTS SAVE ERR] {e}")
 
 
-_HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_history.json")
+_HISTORY_FILE = _resolve_legacy_file("steam_splitter_history.json")
 
 
 def load_history() -> list:
@@ -286,7 +298,7 @@ def clear_history():
         _log.error(f"[HISTORY CLEAR ERR] {e}")
 
 
-_RECOVERY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "steam_splitter_recovery.json")
+_RECOVERY_FILE = _resolve_legacy_file("steam_splitter_recovery.json")
 
 
 def save_recovery(state: dict):

@@ -25,14 +25,9 @@ classifiers = [
 dependencies = [
     "customtkinter>=5.2.0",
     "Pillow>=10.0.0",
-    "pynput>=1.7.6",
     "playwright>=1.40.0",
     "tkinterdnd2>=0.3.0",
     "pydantic>=2.5.0",
-    "pydantic-settings>=2.1.0",
-    "platformdirs>=4.0.0",
-    "loguru>=0.7.0",
-    "psutil>=5.9.0",
 ]
 
 [project.optional-dependencies]
@@ -50,6 +45,16 @@ dev = [
 packaging = [
     "pyinstaller>=6.1.0",
     "nsist>=3.0.0",
+]
+performance = [
+    "numpy>=1.24.0",
+    "torch>=2.0.0; sys_platform != 'darwin'",
+    "pyopencl>=2022.3",
+    "py-cpuinfo>=9.0.0",
+    "scipy>=1.10.0",
+]
+automation = [
+    "pynput>=1.7.6",
 ]
 
 [project.urls]
@@ -135,7 +140,7 @@ check_untyped_defs = false
 
 [tool.pyright]
 include = ["src"]
-exclude = ["**/node_modules", "**/__pycache__", "build", "dist", "src/steameditor/ui/pages", "src/steameditor/ui/components.py", "src/steameditor/ui/design_system.py", "src/steameditor/ui/app.py", "src/steameditor/services/worker_pool.py", "src/steameditor/services/image_cache.py", "src/steameditor/core/uploader.py", "src/steameditor/events.py"]
+exclude = ["**/node_modules", "**/__pycache__", "build", "dist", "src/steameditor/ui/pages", "src/steameditor/ui/components.py", "src/steameditor/ui/design_system.py", "src/steameditor/ui/app.py", "src/steameditor/core/uploader.py"]
 typeCheckingMode = "strict"
 pythonVersion = "3.10"
 pythonPlatform = "Windows"
@@ -184,31 +189,7 @@ reportUnknownParameterType = false
 reportUnknownArgumentType = false
 
 [[tool.pyright.overrides]]
-path = "src/steameditor/services/worker_pool.py"
-typeCheckingMode = "basic"
-reportUnknownMemberType = false
-reportUnknownVariableType = false
-reportUnknownParameterType = false
-reportUnknownArgumentType = false
-
-[[tool.pyright.overrides]]
-path = "src/steameditor/services/image_cache.py"
-typeCheckingMode = "basic"
-reportUnknownMemberType = false
-reportUnknownVariableType = false
-reportUnknownParameterType = false
-reportUnknownArgumentType = false
-
-[[tool.pyright.overrides]]
 path = "src/steameditor/core/uploader.py"
-typeCheckingMode = "basic"
-reportUnknownMemberType = false
-reportUnknownVariableType = false
-reportUnknownParameterType = false
-reportUnknownArgumentType = false
-
-[[tool.pyright.overrides]]
-path = "src/steameditor/events.py"
 typeCheckingMode = "basic"
 reportUnknownMemberType = false
 reportUnknownVariableType = false

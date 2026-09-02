@@ -79,15 +79,20 @@ def patch_gif_trailing_byte(path: str, value: int = 0x21):
 
 
 def find_gifsicle() -> str | None:
-    """Bundled/PATH gifsicle yolunu bulur."""
+    """Bundled/PATH gifsicle yolunu bulur (hem src hem kök layout için)."""
     found = shutil.which("gifsicle")
     if found:
         return found
-    root = os.path.dirname(os.path.abspath(__file__))
+    here = os.path.dirname(os.path.abspath(__file__))
+    # src/steameditor/core -> proje kökünü bulmak için yukarı çık
+    proj_root = os.path.abspath(os.path.join(here, "..", "..", ".."))
     candidates = [
-        os.path.join(root, "GIF", "bin", "gifsicle.exe"),
-        os.path.join(root, "GIF", "bin", "gifsicle.exe"),
-        os.path.join(root, "bin", "gifsicle.exe"),
+        os.path.join(here, "GIF", "bin", "gifsicle.exe"),
+        os.path.join(proj_root, "GIF", "bin", "gifsicle.exe"),
+        os.path.join(proj_root, "GIF", "bin", "gifsicle"),
+        os.path.join(proj_root, "src", "steameditor", "resources", "GIF_bin", "gifsicle.exe"),
+        os.path.join(proj_root, "src", "steameditor", "resources", "GIF_bin", "gifsicle"),
+        os.path.join(here, "bin", "gifsicle.exe"),
     ]
     return next((p for p in candidates if os.path.isfile(p)), None)
 
@@ -132,7 +137,23 @@ def optimize_gif_file(path: str, lossy: int = 80, colors: int = 128) -> bool:
     return False
 
 
-_BORDER_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Border Templates")
+def _resolve_border_dir() -> str:
+    """Border Templates klasörünü bul (src/resources, kök, legacy)."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    proj_root = os.path.abspath(os.path.join(here, "..", "..", ".."))
+    candidates = [
+        os.path.join(proj_root, "src", "steameditor", "resources", "border_templates"),
+        os.path.join(proj_root, "Border Templates"),
+        os.path.join(here, "Border Templates"),
+        os.path.join(here, "..", "resources", "border_templates"),
+    ]
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    # Fallback: ilk aday (yoksa list_border_templates boş döner)
+    return candidates[0]
+
+_BORDER_DIR = _resolve_border_dir()
 
 
 # ==========================================================
@@ -338,10 +359,25 @@ def apply_auto_enhance(img: Image.Image, cfg: dict | None) -> Image.Image:
 
 _OVERLAY_FONT_CACHE: dict[int, "ImageFont.FreeTypeFont"] = {}
 _OVERLAY_FONT_CANDIDATES = (
+    # Windows
     r"C:\Windows\Fonts\seguisb.ttf",
     r"C:\Windows\Fonts\segoeuib.ttf",
     r"C:\Windows\Fonts\arialbd.ttf",
     r"C:\Windows\Fonts\arial.ttf",
+    # macOS
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
+    "/Library/Fonts/Arial.ttf",
+    # Linux (Debian/Ubuntu/Arch)
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+    "/usr/share/fonts/TTF/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/arial.ttf",
+    # Flatpak / Snap
+    "/app/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
 )
 
 
@@ -358,6 +394,25 @@ def _load_overlay_font(size: int):
                 break
             except Exception:
                 continue
+    # Fallback: scan common font dirs for any TTF
+    if font is None:
+        import glob
+        fallback_globs = [
+            "/usr/share/fonts/**/*.ttf",
+            "/usr/local/share/fonts/**/*.ttf",
+            "/System/Library/Fonts/**/*.ttf",
+            "/Library/Fonts/**/*.ttf",
+        ]
+        for pattern in fallback_globs:
+            for cand in glob.glob(pattern, recursive=True):
+                try:
+                    font = ImageFont.truetype(cand, size)
+                    _log.info(f"[FONT] Fallback font found: {cand}")
+                    break
+                except Exception:
+                    continue
+            if font:
+                break
     if font is None:
         font = ImageFont.load_default()
     _OVERLAY_FONT_CACHE[size] = font

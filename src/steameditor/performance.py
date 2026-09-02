@@ -15,7 +15,11 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from functools import partial
 
 from PIL import Image, ImageFilter, ImageEnhance, ImageOps, ImageChops, ImageDraw, ImageFont, ImageSequence
-import numpy as np
+
+try:
+    import numpy as np
+except ImportError:
+    np = None  # type: ignore
 
 from steameditor.services.log_service import get_logger
 
@@ -469,6 +473,8 @@ class NumPyAccelerator:
                         color: Tuple[int, int, int], 
                         opacity: float = 1.0, glow: float = 0.0) -> Image.Image:
         """Apply border effect using NumPy for speed."""
+        if np is None:
+            raise ImportError("numpy gerekli — `pip install steameditor[performance]` ile yükleyin")
         img_arr = np.array(img.convert("RGBA"), dtype=np.float32) / 255.0
         border_arr = np.array(border_img.convert("RGBA").resize(img.size, Image.LANCZOS), 
                               dtype=np.float32) / 255.0
@@ -508,8 +514,10 @@ class NumPyAccelerator:
     
     @staticmethod
     def batch_process(frames: list[Image.Image], 
-                      operation: Callable[[np.ndarray], np.ndarray]) -> list[Image.Image]:
+                      operation: Callable[[Any], Any]) -> list[Image.Image]:
         """Apply operation to batch of frames using vectorized NumPy."""
+        if np is None:
+            raise ImportError("numpy gerekli — `pip install steameditor[performance]` ile yükleyin")
         if not frames:
             return []
         

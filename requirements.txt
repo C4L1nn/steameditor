@@ -1,11 +1,6 @@
 # Temel bağımlılıklar — pyproject.toml [project.dependencies] ile senkron
 customtkinter>=5.2.0
 Pillow>=10.0.0
-pynput>=1.7.6
 playwright>=1.40.0
 tkinterdnd2>=0.3.0
 pydantic>=2.5.0
-pydantic-settings>=2.1.0
-platformdirs>=4.0.0
-loguru>=0.7.0
-psutil>=5.9.0

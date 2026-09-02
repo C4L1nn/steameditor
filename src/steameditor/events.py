@@ -25,20 +25,26 @@ class EventBus:
         with cls._lock:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
-                cls._instance._subscribers: dict[str, list[Callable[[Event], None]]] = defaultdict(list)
+                cls._instance._subscribers: dict[str, dict[int, Callable[[Event], None]]] = defaultdict(dict)
+                cls._instance._next_id: int = 0
                 cls._instance._sub_lock = threading.RLock()
             return cls._instance
 
     def subscribe(self, event_name: str, callback: Callable[[Event], None]) -> int:
-        """Subscribe to an event. Returns subscription ID for unsubscribing."""
+        """Subscribe to an event. Returns stable subscription ID for unsubscribing."""
         with self._sub_lock:
-            self._subscribers[event_name].append(callback)
-            return len(self._subscribers[event_name]) - 1
+            sub_id = self._next_id
+            self._next_id += 1
+            self._subscribers[event_name][sub_id] = callback
+            return sub_id
 
     def unsubscribe(self, event_name: str, sub_id: int) -> bool:
         with self._sub_lock:
-            if 0 <= sub_id < len(self._subscribers.get(event_name, [])):
-                self._subscribers[event_name].pop(sub_id)
+            subs = self._subscribers.get(event_name)
+            if subs is not None and sub_id in subs:
+                del subs[sub_id]
+                if not subs:
+                    self._subscribers.pop(event_name, None)
                 return True
         return False
 
@@ -46,12 +52,14 @@ class EventBus:
         """Emit an event to all subscribers (synchronous)."""
         event = Event(event_name, data, source)
         with self._sub_lock:
-            callbacks = list(self._subscribers.get(event_name, []))
+            callbacks = list(self._subscribers.get(event_name, {}).values())
         for cb in callbacks:
             try:
                 cb(event)
             except Exception:
                 # Log but don't break other subscribers
+                import logging
+                logging.getLogger("steameditor.events").exception("Event callback failed")
                 pass
 
     def emit_async(self, event_name: str, data: Any = None, source: Any = None) -> None:

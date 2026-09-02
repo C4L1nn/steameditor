@@ -1,12 +1,13 @@
 """steameditor.services.worker_pool — Thread pool for background processing."""
-
 from __future__ import annotations
 
-import asyncio
 import threading
+import time
+import uuid
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, Future
-from dataclasses import dataclass
-from typing import Callable, TypeVar, Any
+from dataclasses import dataclass, field
+from typing import Any, Callable, TypeVar
 
 T = TypeVar("T")
 
@@ -19,18 +20,18 @@ class TaskResult:
     error: Exception | None = None
 
     @classmethod
-    def ok(cls, result: Any = None) -> TaskResult:
+    def ok(cls, result: Any = None) -> "TaskResult":
         return cls(success=True, result=result)
 
     @classmethod
-    def err(cls, error: Exception) -> TaskResult:
+    def err(cls, error: Exception) -> "TaskResult":
         return cls(success=False, error=error)
 
 
 class WorkerPool:
     """Thread pool for CPU-intensive background tasks."""
 
-    _instance: WorkerPool | None = None
+    _instance: "WorkerPool | None" = None
     _lock = threading.Lock()
 
     def __new__(cls, max_workers: int | None = None):
@@ -38,33 +39,30 @@ class WorkerPool:
             if cls._instance is None:
                 cls._instance = super().__new__(cls)
                 cls._instance._init(max_workers)
-            elif max_workers is not None:
+            elif max_workers is not None and max_workers != cls._instance.max_workers:
                 cls._instance._resize(max_workers)
             return cls._instance
 
     def _init(self, max_workers: int | None):
-        self.max_workers = max_workers or min(4, (threading.cpu_count() or 2))
+        self.max_workers = max_workers or min(4, (threading.active_count() or 2) * 2)
+        # clamp to sensible range 2..8
+        self.max_workers = max(2, min(8, self.max_workers))
         self._executor: ThreadPoolExecutor | None = None
-        self._loop: asyncio.AbstractEventLoop | None = None
         self._shutdown = False
 
     def _resize(self, max_workers: int):
         if self._executor:
             self._executor.shutdown(wait=False)
-        self.max_workers = max_workers
-        self._executor = None
+            self._executor = None
+        self.max_workers = max(2, min(8, max_workers))
         self.start()
 
     def start(self):
-        if self._executor is None:
+        if self._executor is None and not self._shutdown:
             self._executor = ThreadPoolExecutor(
                 max_workers=self.max_workers,
-                thread_name_prefix="steameditor-worker"
+                thread_name_prefix="steameditor-worker",
             )
-        try:
-            self._loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self._loop = asyncio.new_event_loop()
 
     def shutdown(self, wait: bool = True):
         self._shutdown = True
@@ -73,35 +71,52 @@ class WorkerPool:
             self._executor = None
 
     def submit(self, fn: Callable[..., T], *args, **kwargs) -> Future[TaskResult]:
-        """Submit a task to the pool."""
-        if not self._executor:
+        """Submit a task to the pool. Returns Future[TaskResult]."""
+        if self._executor is None or self._shutdown:
+            self._shutdown = False
             self.start()
 
-        def wrapped():
+        def wrapped() -> TaskResult:
             try:
                 return TaskResult.ok(fn(*args, **kwargs))
             except Exception as e:
                 return TaskResult.err(e)
 
+        assert self._executor is not None
         return self._executor.submit(wrapped)
 
     async def run_async(self, fn: Callable[..., T], *args, **kwargs) -> TaskResult:
-        """Run a blocking function asynchronously."""
-        if not self._loop:
-            self.start()
-        return await self._loop.run_in_executor(self._executor, fn, *args, **kwargs)
+        """Run a blocking function asynchronously (asyncio)."""
+        import asyncio
+        try:
+            # Use to_thread if available (py 3.9+)
+            result = await asyncio.to_thread(fn, *args, **kwargs)
+            return TaskResult.ok(result)
+        except Exception as e:
+            return TaskResult.err(e)
 
     def map(self, fn: Callable[[Any], T], items: list[Any]) -> list[TaskResult]:
-        """Map function over items in parallel."""
+        """Map function over items in parallel. Preserves order."""
         if not self._executor:
             self.start()
-        futures = [self._executor.submit(lambda x=item: TaskResult.ok(fn(x)) or TaskResult.err(Exception("error")), item) for item in items]
-        # Wait for all
-        results = []
+        assert self._executor is not None
+        # Proper closure capture via default arg
+        futures: list[Future[TaskResult]] = []
+        for item in items:
+            # capture item by value
+            def _task(x=item):  # type: ignore
+                try:
+                    return TaskResult.ok(fn(x))
+                except Exception as e:
+                    return TaskResult.err(e)
+            futures.append(self._executor.submit(_task))
+
+        results: list[TaskResult] = []
         for f in futures:
             try:
                 results.append(f.result())
             except Exception as e:
+                # Should not happen because _task catches, but just in case
                 results.append(TaskResult.err(e))
         return results
 
@@ -109,11 +124,6 @@ class WorkerPool:
 # ════════════════════════════════════════════════════════════════════
 # Task Queue with Progress
 # ════════════════════════════════════════════════════════════════════
-
-from dataclasses import field
-from collections import deque
-import time
-
 
 @dataclass
 class QueuedTask:
@@ -134,15 +144,15 @@ class TaskQueue:
     def __init__(self, worker_pool: WorkerPool | None = None):
         self._pool = worker_pool or WorkerPool()
         self._queue: deque[QueuedTask] = deque()
-        self._running: dict[str, Future] = {}
+        self._running: dict[str, Future[TaskResult]] = {}
+        self._running_tasks: dict[str, QueuedTask] = {}  # id -> task
         self._lock = threading.RLock()
-        self._cancelled = set()
+        self._cancelled: set[str] = set()
         self._paused = False
         self._callbacks: list[Callable[[QueuedTask], None]] = []
 
     def enqueue(self, fn: Callable, *args, priority: int = 0, task_id: str | None = None, **kwargs) -> str:
         """Add task to queue. Returns task ID."""
-        import uuid
         tid = task_id or str(uuid.uuid4())[:8]
         task = QueuedTask(id=tid, fn=fn, args=args, kwargs=kwargs, priority=priority)
         with self._lock:
@@ -163,52 +173,91 @@ class TaskQueue:
             if task_id in self._cancelled:
                 return False
             self._cancelled.add(task_id)
-            # Cancel running
-            if task_id in self._running:
-                self._running[task_id].cancel()
-                del self._running[task_id]
-            # Remove from queue
+            # Cancel running future if possible
+            fut = self._running.get(task_id)
+            if fut is not None:
+                fut.cancel()
+                self._running.pop(task_id, None)
+                self._running_tasks.pop(task_id, None)
+            # Remove from pending queue
+            original_len = len(self._queue)
             self._queue = deque(t for t in self._queue if t.id != task_id)
-            return True
+            # Also remove if it was already considered cancelled before start
+            return len(self._queue) != original_len or task_id in self._running or task_id in self._cancelled
 
     def pause(self):
-        self._paused = True
+        with self._lock:
+            self._paused = True
 
     def resume(self):
-        self._paused = False
+        with self._lock:
+            self._paused = False
 
     def on_task_complete(self, callback: Callable[[QueuedTask], None]):
-        self._callbacks.append(callback)
+        with self._lock:
+            self._callbacks.append(callback)
 
     def process(self, max_concurrent: int = 1) -> list[QueuedTask]:
-        """Process queued tasks. Call repeatedly or in a loop."""
-        completed = []
+        """Start queued tasks up to max_concurrent and collect completed.
+
+        Call repeatedly or in a loop. Returns list of tasks that just completed.
+        Thread-safe.
+        """
+        completed: list[QueuedTask] = []
+        callbacks: list[Callable[[QueuedTask], None]] = []
         with self._lock:
-            # Check for cancellations
-            self._queue = deque(t for t in self._queue if t.id not in self._cancelled)
-            self._cancelled.clear()
+            # Filter out cancelled pending
+            if self._cancelled:
+                self._queue = deque(t for t in self._queue if t.id not in self._cancelled)
+                # cancelled running already handled in cancel(); clear for pending
+                # keep cancelled set for tasks that were cancelled before start
+                # remove ids that are not running/queued anymore
+                still_pending = {t.id for t in self._queue} | set(self._running.keys())
+                self._cancelled = {cid for cid in self._cancelled if cid in still_pending}
 
             # Start new tasks up to max_concurrent
             while len(self._running) < max_concurrent and self._queue and not self._paused:
                 task = self._queue.popleft()
                 if task.id in self._cancelled:
+                    self._cancelled.discard(task.id)
                     continue
                 task.started_at = time.time()
                 future = self._pool.submit(task.fn, *task.args, **task.kwargs)
                 self._running[task.id] = future
+                self._running_tasks[task.id] = task
 
-            # Check completed
-            done_ids = []
-            for tid, future in list(self._running.items()):
-                if future.done():
+            # Check completed futures
+            done_ids: list[str] = []
+            for tid, fut in list(self._running.items()):
+                if fut.done():
                     done_ids.append(tid)
 
             for tid in done_ids:
-                future = self._running.pop(tid)
-                # Find task (we need to track it)
-                # For simplicity, we don't track task objects in running
-                # In a real implementation, you'd keep a reference
-                pass
+                fut = self._running.pop(tid, None)
+                task = self._running_tasks.pop(tid, None)
+                if task is None or fut is None:
+                    continue
+                try:
+                    # Future returns TaskResult (pool always wraps)
+                    tr: TaskResult = fut.result()
+                except Exception as e:
+                    tr = TaskResult.err(e)
+                task.result = tr
+                task.completed_at = time.time()
+                completed.append(task)
+
+            # Copy callbacks outside lock to call without holding
+            if completed:
+                callbacks = list(self._callbacks)
+
+        # Invoke callbacks outside lock
+        for task in completed:
+            for cb in callbacks:
+                try:
+                    cb(task)
+                except Exception:
+                    import logging
+                    logging.getLogger("steameditor.worker_pool").exception("on_task_complete callback failed")
 
         return completed
 
@@ -223,10 +272,15 @@ class TaskQueue:
     def clear(self):
         with self._lock:
             self._queue.clear()
+            # Mark running as cancelled (best effort)
             self._cancelled.update(self._running.keys())
             for f in self._running.values():
-                f.cancel()
+                try:
+                    f.cancel()
+                except Exception:
+                    pass
             self._running.clear()
+            self._running_tasks.clear()
 
 
 # Global accessor

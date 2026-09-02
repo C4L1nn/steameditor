@@ -1,10 +1,11 @@
 [
   {
-    "name": "Steam 150x1250 (5)",
-    "width": 754,
-    "height": 1250,
-    "parts": 5,
+    "name": "Özel (147×1308 ×5)",
+    "mode": "uniform",
     "last_byte": 33,
-    "prefix": "parca"
+    "prefix": "cus",
+    "width": 735,
+    "height": 1308,
+    "parts": 5
   }
 ]

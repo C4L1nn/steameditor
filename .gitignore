@@ -25,6 +25,11 @@ Thumbs.db
 
 # Yerel araç yapılandırması (API anahtarı içerir)
 opencode.json
+.env
+.env.*
+!.env.example
+*.key
+*.pem
 
 # Log dosyaları
 *.log
@@ -32,6 +37,8 @@ opencode.json
 # Çalışma zamanı kullanıcı verisi
 steam_splitter_history.json
 steam_splitter_recovery.json
+steam_splitter_profiles.json
+steam_splitter_projects.json
 
 # Bundle edilen buyuk binary'ler (v2 paket kaynaklari)
 src/steameditor/resources/GIF_bin/
