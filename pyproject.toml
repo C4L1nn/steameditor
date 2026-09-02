@@ -51,9 +51,9 @@ automation = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/aykut/steameditor"
-Repository = "https://github.com/aykut/steameditor"
-Issues = "https://github.com/aykut/steameditor/issues"
+Homepage = "https://github.com/C4L1nn/steameditor"
+Repository = "https://github.com/C4L1nn/steameditor"
+Issues = "https://github.com/C4L1nn/steameditor/issues"
 
 [project.scripts]
 steameditor = "steameditor.__main__:main"
