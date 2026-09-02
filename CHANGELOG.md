@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.2.0] - 2026-09-02
+
+### ✨ Added — Cloud Sync / Export
+- **Cloud Sync** `ui/pages/settings_page.py:539` Projeler sekmesine `📤 Dışa Aktar` / `📥 İçe Aktar` (projeler+profiller+presets JSON, `version`+`exported_at`), Drive/Discord ile paylaş → diğer cihazda içe aktar (merge, overwrite), `tests/test_cloud_sync.py:1` 4 test (`157 passed`)
+
 ## [2.1.0] - 2026-09-02
 
 ### ✨ Added — Yeni Feature'lar

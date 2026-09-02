@@ -593,6 +593,93 @@ class SettingsPage(ctk.CTkFrame):
 
         # List
         ctk.CTkLabel(p, text="KAYITLI PROJELER", font=make_font(TYPO.heading_sm, weight="bold"), text_color=COLORS.text_muted).pack(anchor="w", padx=4, pady=(0, 6))
+
+        # Cloud Sync — Export/Import row
+        sync_row = ctk.CTkFrame(p, fg_color="transparent")
+        sync_row.pack(fill="x", padx=2, pady=(0, 8))
+        sync_row.grid_columnconfigure((0, 1), weight=1)
+
+        def export_projects():
+            try:
+                import json as _json
+                from tkinter import filedialog as _fd
+                data = {
+                    "version": "2.1.0",
+                    "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "projects": load_projects(),
+                    "profiles": load_profiles(),
+                }
+                # Also include custom presets (non-builtin)
+                try:
+                    from steameditor.core.models import BUILTIN_TEMPLATES
+                    builtin_names = {t.name for t in BUILTIN_TEMPLATES}
+                    customs = [t for t in BUILTIN_TEMPLATES if t.name not in builtin_names]
+                    # Fallback: legacy TEMPLATES
+                    if not customs:
+                        from steameditor.config import TEMPLATES as _T
+                        customs = [t for t in _T if t.get("prefix") not in ("work", "art", "shot")]
+                    data["presets"] = customs
+                except Exception:
+                    pass
+                path = _fd.asksaveasfilename(
+                    title="Projeleri Dışa Aktar",
+                    defaultextension=".json",
+                    filetypes=[("JSON", "*.json"), ("Tüm Dosyalar", "*.*")],
+                    initialfile=f"splitforge_export_{time.strftime('%Y%m%d_%H%M')}.json",
+                )
+                if not path:
+                    return
+                with open(path, "w", encoding="utf-8") as f:
+                    _json.dump(data, f, ensure_ascii=False, indent=2)
+                self.app._status.ok(f"Dışa aktarıldı: {os.path.basename(path)} ({len(data['projects'])} proje)")
+            except Exception as e:
+                self.app._status.error(f"Dışa aktarma hatası: {e}")
+
+        def import_projects():
+            try:
+                import json as _json
+                from tkinter import filedialog as _fd
+                path = _fd.askopenfilename(
+                    title="Projeleri İçe Aktar",
+                    filetypes=[("JSON", "*.json"), ("Tüm Dosyalar", "*.*")],
+                )
+                if not path or not os.path.isfile(path):
+                    return
+                with open(path, "r", encoding="utf-8") as f:
+                    data = _json.load(f)
+                incoming_projects = data.get("projects") if isinstance(data, dict) and "projects" in data else (data if isinstance(data, dict) else {})
+                if not isinstance(incoming_projects, dict):
+                    self.app._status.error("Dosya formatı geçersiz (projects dict bekleniyor)")
+                    return
+                # Merge: existing + incoming (incoming overwrites same name)
+                current = load_projects()
+                merged_count = 0
+                for k, v in incoming_projects.items():
+                    if isinstance(v, dict):
+                        current[k] = v
+                        merged_count += 1
+                save_projects(current)
+                # Profiles if present
+                if isinstance(data, dict) and "profiles" in data and isinstance(data["profiles"], dict):
+                    cur_prof = load_profiles()
+                    for k, v in data["profiles"].items():
+                        if isinstance(v, dict):
+                            cur_prof[k] = v
+                    save_profiles(cur_prof)
+                self.app._status.ok(f"İçe aktarıldı: {merged_count} proje (toplam {len(current)})")
+                self.open_tab("Projeler")
+            except Exception as e:
+                self.app._status.error(f"İçe aktarma hatası: {e}")
+
+        AnimButton(sync_row, text="📤  Dışa Aktar", nc=COLORS.bg_3, hc=COLORS.bg_4, height=30, corner_radius=8,
+                   font=make_font(TYPO.body_sm, weight="bold"), text_color=COLORS.text_primary,
+                   command=export_projects).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        AnimButton(sync_row, text="📥  İçe Aktar", nc=COLORS.bg_3, hc=COLORS.bg_4, height=30, corner_radius=8,
+                   font=make_font(TYPO.body_sm, weight="bold"), text_color=COLORS.accent,
+                   command=import_projects).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+        ctk.CTkLabel(p, text="Cloud Sync: Dosyayı Drive/Discord ile paylaş, diğer cihazda İçe Aktar ile yükle.",
+                     font=make_font(TYPO.caption), text_color=COLORS.text_muted, wraplength=420, justify="left").pack(anchor="w", padx=4, pady=(0, 8))
+
         projects = load_projects()
         if not projects:
             ctk.CTkLabel(p, text="Henüz proje yok.", font=make_font(TYPO.caption), text_color=COLORS.text_muted).pack(anchor="w", padx=4, pady=8)
