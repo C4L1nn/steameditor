@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [2.0.1] - 2026-09-02
+## [2.1.0] - 2026-09-02
 
-### 🔒 Fixed — Kritik Riskler
+### ✨ Added — Yeni Feature'lar
+- **Dark/Light Theme Toggle** `design_system.py:111` `LightColors` + proxy `COLORS`, `core/models.py:160` `AppConfig.theme`, `services/flat_config.py:44` mapping, `services/config_service.py:95` migrasyon, `ui/app_shell.py:471` sidebar `🌙/☀️` toggle + `Ctrl+T` + persistence (`149→153 tests`)
+- **Video → GIF Geliştirme** `GIF/gif.py:84` 2 yeni profil (`Steam ultra 1080p`, `WebP küçük`), `GIF/gif.py:28` `_optimal_threads()` (CPU'ya göre 2-8), `GIF/gif.py:2027` high-quality `scale=lanczos+accurate_rnd+full_chroma_int`, `GIF/gif.py:2037` palette `bayer_scale=2` granular, `GIF/gif.py:170` `BORDER_TEMPLATE_DIR` dual-layout, `GIF/gif.py:2325` threads dynamic
+
+### 🔒 Fixed — Kritik Riskler (v2.0.1)
 - **Secret** `opencode.json` API key env var'a taşındı (`{env:NVIDIA_API_KEY}`), `.env.example` eklendi (`opencode.json:9`, `.gitignore:27`)
 - **Kod çoğalması** `core.py:1` ve `config.py:1` tek kaynak proxy shims (`processor.py`, `config_legacy.py`), `processor.py:81`/`135` dual-layout border/gifsicle path
 - **Bağımlılık** dead deps temizlendi (`pynput`, `platformdirs`, `loguru`, `psutil`, `pydantic-settings` → optional) (`pyproject.toml:25`, `requirements.txt:1`), `performance.py` silindi
@@ -22,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 🧹 Changed
 - `pyproject.toml` `performance` extra kaldırıldı, `pydantic` minimal set
 - `README.md:20` env setup eklendi
+- `tool.ruff` → `tool.ruff.lint` modernize, `pyproject.toml:142` pyright strict temizliği
 
 ---
 

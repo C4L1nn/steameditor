@@ -28,6 +28,16 @@ ctk.set_default_color_theme("dark-blue")
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
 
 # ── Araç yolları ──────────────────────────────────────────
+def _optimal_threads() -> int:
+    """CPU'ya göre ffmpeg/gifsicle için optimal thread sayısı."""
+    try:
+        cores = os.cpu_count() or 4
+        # ffmpeg için 2-8 arası, gifsicle tek thread daha verimli değil ama 2-4
+        return max(2, min(8, cores))
+    except Exception:
+        return 4
+
+
 def _find_tool(name: str) -> str | None:
     """Sistemde bir komut satırı aracı bul.
     Önce PATH'a bakar, sonra yaygın Windows kurulum klasörlerini tarar,
@@ -100,6 +110,15 @@ QUALITY_PROFILES = {
         "sharpen": True,
         "smooth": False,
     },
+    "Steam ultra (1080p)": {
+        "fmt": "GIF",
+        "width": "1080",
+        "fps": 20,
+        "lossy": 8,
+        "colors": "256",
+        "sharpen": True,
+        "smooth": False,
+    },
     "Küçük dosya": {
         "fmt": "GIF",
         "width": "480",
@@ -125,6 +144,15 @@ QUALITY_PROFILES = {
         "lossy": 0,
         "colors": "256",
         "sharpen": True,
+        "smooth": False,
+    },
+    "WebP küçük": {
+        "fmt": "WebP",
+        "width": "640",
+        "fps": 24,
+        "lossy": 0,
+        "colors": "128",
+        "sharpen": False,
         "smooth": False,
     },
 }
@@ -169,7 +197,21 @@ EFFECT_GROUPS = {
 }
 
 USER_PRESETS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "effect_presets.json")
-BORDER_TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Border Templates")
+
+def _resolve_border_dir() -> str:
+    here = os.path.dirname(os.path.abspath(__file__))
+    proj_root = os.path.dirname(here)
+    candidates = [
+        os.path.join(proj_root, "src", "steameditor", "resources", "border_templates"),
+        os.path.join(proj_root, "Border Templates"),
+        os.path.join(here, "Border Templates"),
+    ]
+    for c in candidates:
+        if os.path.isdir(c):
+            return c
+    return candidates[1]
+
+BORDER_TEMPLATE_DIR = _resolve_border_dir()
 BORDER_TEMPLATE_NONE = "Yok"
 
 # ── Renk Paleti (Carbon × Turuncu — editor.py ile aynı) ──
@@ -1998,7 +2040,13 @@ def _extra_filters(sharpen, smooth, effect="none", border=0, glow=0,
 
 def _video_filters(fps, out_w, sharpen, smooth, effect, border, glow,
                    intensity=75, bloom=55, vignette=45, particles=45):
-    filters = [f"fps={fps}", f"scale={out_w}:-1:flags=lanczos", "setsar=1"]
+    # High-quality lanczos with accurate rounding and full chroma
+    filters = [
+        f"fps={fps}",
+        f"scale={out_w}:-1:flags=lanczos+accurate_rnd+full_chroma_int:sws_dither=ed",
+        "setsar=1",
+        "format=rgb24",
+    ]
     extra = _extra_filters(sharpen, smooth, effect, border, glow,
                            intensity, bloom, vignette, particles)
     if extra:
@@ -2012,6 +2060,8 @@ def _paletteuse_filter(lossy):
         return "paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle"
     if lossy >= 45:
         return "paletteuse=dither=bayer:bayer_scale=3:diff_mode=rectangle"
+    if lossy >= 20:
+        return "paletteuse=dither=bayer:bayer_scale=2:diff_mode=rectangle"
     return "paletteuse=dither=sierra2_4a:diff_mode=rectangle"
 
 
@@ -2284,9 +2334,10 @@ def _convert_video(vpath, out_path, fmt,
     def dur_args():
         return ["-t", str(eff_dur)] if eff_dur < total_dur else []
 
+    threads = str(_optimal_threads())
     try:
         if fmt == "WebP":
-            cmd = ([FFMPEG, "-y", "-threads", "6"]
+            cmd = ([FFMPEG, "-y", "-threads", threads]
                    + dur_args()
                    + ["-i", vpath, "-vf", base_vf,
                       "-loop", "0", "-q:v", "80", out_path])
@@ -2297,15 +2348,15 @@ def _convert_video(vpath, out_path, fmt,
                                              colors, lossy, eff_dur, fps)
             return True, "WebP hazır"
 
-        # GIF: palettegen
+        # GIF: palettegen (high quality)
         vf_pal = f"{base_vf},palettegen=max_colors={colors}:stats_mode=diff"
-        if not run([FFMPEG, "-y", "-threads", "6"] + dur_args() +
+        if not run([FFMPEG, "-y", "-threads", threads] + dur_args() +
                    ["-i", vpath, "-vf", vf_pal, "-frames:v", "1", "-update", "1", pal]):
             return False, "palettegen hatası"
 
         # GIF: paletteuse
         lavfi = f"{base_vf},{_paletteuse_filter(lossy)}"
-        if not run([FFMPEG, "-y", "-threads", "6"] + dur_args() +
+        if not run([FFMPEG, "-y", "-threads", threads] + dur_args() +
                    ["-i", vpath, "-i", pal,
                     "-lavfi", lavfi, raw]):
             return False, "paletteuse hatası"
