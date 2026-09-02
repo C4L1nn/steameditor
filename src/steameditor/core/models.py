@@ -140,6 +140,7 @@ class EffectConfig(BaseModel):
     auto_enhance: AutoEnhanceConfig = Field(default_factory=AutoEnhanceConfig)
     output: OutputConfig = Field(default_factory=lambda: OutputConfig())
     autocrop_enabled: bool = False
+    autocrop_mode: Annotated[Literal["border", "subject", "both"], Field(default="border")] = "border"
 
 
 # ════════════════════════════════════════════════════════════════════

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steameditor"
-version = "2.3.0"
+version = "2.4.0"
 description = "SplitForge — Steam Showcase Studio"
 readme = "README.md"
 license = {text = "MIT"}
@@ -48,6 +48,10 @@ packaging = [
 ]
 automation = [
     "pynput>=1.7.6",
+]
+smart-crop = [
+    "rembg>=2.0.0",
+    "onnxruntime>=1.15.0",
 ]
 
 [project.urls]

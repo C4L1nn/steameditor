@@ -19,6 +19,7 @@ from steameditor.core.models import AppConfig
 # flat anahtar -> AppConfig üzerindeki alan yolu
 _FIELD_MAP: dict[str, tuple[str, ...]] = {
     "autocrop_enabled": ("effects", "autocrop_enabled"),
+    "autocrop_mode": ("effects", "autocrop_mode"),
     "border_fx_enabled": ("effects", "border_fx", "enabled"),
     "border_fx_template": ("effects", "border_fx", "template"),
     "border_fx_color": ("effects", "border_fx", "color"),

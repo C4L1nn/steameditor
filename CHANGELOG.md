@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.4.0] - 2026-09-02
+
+### ✨ Added — Smart AutoCrop
+- **Smart AutoCrop** `core/models.py:137` `EffectConfig.autocrop_mode` (`border`|`subject`|`both`), `services/flat_config.py:20` mapping, `services/config_service.py:95` migrasyon, `core/processor.py:163` `_subject_bbox()` (rembg optional lazy, fallback border), `core/processor.py:197` `_autocrop_bbox_smart()` union, `core/processor.py:707` GIF first-frame smart, `ui/app.py:645` `SegmentedButton` `[Kenar|Özne|Birleşik]` + hint, `pyproject.toml:49` `smart-crop` extra (`rembg`, `onnxruntime`), `tests/test_smart_autocrop.py:1` 8 test (`165 passed`)
+
 ## [2.3.0] - 2026-09-02
 
 ### ✨ Added — UI Yenileme / Performans / Yeni Efekt

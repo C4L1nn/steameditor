@@ -645,6 +645,28 @@ class App(AppShell):
         # ── ÖN İŞLEME ──
         section("ÖN İŞLEME")
         enable_check("Kenar boşluğunu otomatik kırp (autocrop)", "autocrop_enabled")
+        # Smart mode selector
+        mode_row = ctk.CTkFrame(panel, fg_color="transparent")
+        mode_row.pack(fill="x", padx=6, pady=(0, 4))
+        ctk.CTkLabel(mode_row, text="Mod", font=make_font(TYPO.caption), text_color=COLORS.text_muted).pack(side="left")
+        _mode_map = {"border": "Kenar", "subject": "Özne", "both": "Birleşik"}
+        _mode_rev = {v: k for k, v in _mode_map.items()}
+        cur_mode = str(cfg.get("autocrop_mode", "border")).lower()
+        if cur_mode not in _mode_map:
+            cur_mode = "border"
+        mode_var = StringVar(value=_mode_map[cur_mode])
+        def _on_mode(v):
+            cfg["autocrop_mode"] = _mode_rev.get(v, "border")
+            live()
+        ctk.CTkSegmentedButton(
+            mode_row, values=list(_mode_map.values()), variable=mode_var,
+            selected_color=COLORS.accent_500, selected_hover_color=COLORS.accent_600,
+            unselected_color=COLORS.surface_3, unselected_hover_color=COLORS.surface_4,
+            text_color=COLORS.text_primary, font=make_font(TYPO.body_sm, weight="bold"),
+            command=_on_mode,
+        ).pack(side="left", fill="x", expand=True, padx=(8, 0))
+        ctk.CTkLabel(panel, text="Kenar=şeffaf/tek renk, Özne=AI konu, Birleşik=union (rembg yoksa Kenar'a düşer)",
+                     font=make_font(TYPO.caption), text_color=COLORS.text_muted, wraplength=280, justify="left").pack(anchor="w", padx=6, pady=(0, 4))
 
         # ── OTOMATİK İYİLEŞTİR ──
         section("OTOMATİK İYİLEŞTİR")

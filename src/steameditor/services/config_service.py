@@ -155,6 +155,8 @@ class ConfigService:
             effects["auto_enhance"] = aen
         if "autocrop_enabled" in data:
             effects["autocrop_enabled"] = data["autocrop_enabled"]
+        if "autocrop_mode" in data:
+            effects["autocrop_mode"] = data["autocrop_mode"]
         # output
         out: dict[str, Any] = {}
         for old, new in [("output_format", "format"),

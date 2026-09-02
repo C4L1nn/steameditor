@@ -175,16 +175,56 @@ def _autocrop_bbox(img: Image.Image, tolerance: int = 12):
     return diff.point(lambda p: 255 if p > tolerance else 0).getbbox()
 
 
+def _subject_bbox(img: Image.Image) -> tuple[int, int, int, int] | None:
+    """Subject (insan/nesne) bbox — rembg varsa kullan, yoksa None.
+    Heavy model lazy import, yoksa seamless fallback."""
+    try:
+        # rembg opsiyonel — yoksa sessizce atla (border moduna düş)
+        from rembg import remove  # type: ignore
+
+        # only_mask=True ile sadece alpha maskesi al (hızlı)
+        mask = remove(img.convert("RGB"), only_mask=True)
+        if isinstance(mask, Image.Image):
+            # mask: L modunda 0-255, >8 eşik
+            return mask.point(lambda p: 255 if p > 30 else 0).getbbox()
+    except ImportError:
+        pass
+    except Exception as e:
+        _log.debug(f"[SUBJECT BBOX] rembg hatası, border fallback: {e}")
+    return None
+
+
+def _autocrop_bbox_smart(img: Image.Image, cfg: dict | None) -> tuple[int, int, int, int] | None:
+    """Mode göre bbox seç: border | subject | both (union)."""
+    mode = str((cfg or {}).get("autocrop_mode", "border")).lower()
+    border_box = _autocrop_bbox(img)
+    if mode == "border":
+        return border_box
+    subject_box = _subject_bbox(img)
+    if mode == "subject":
+        return subject_box if subject_box else border_box
+    # both: union
+    if border_box and subject_box:
+        return (
+            min(border_box[0], subject_box[0]),
+            min(border_box[1], subject_box[1]),
+            max(border_box[2], subject_box[2]),
+            max(border_box[3], subject_box[3]),
+        )
+    return subject_box or border_box
+
+
 def autocrop_borders(img: Image.Image, cfg: dict | None) -> Image.Image:
     """cfg'de autocrop_enabled açıksa etraftaki şeffaf/tek renk boşluğu kırpar
     (ezgif'in 'trim transparent pixels' seçeneğinin karşılığı). Tamamen boş
-    (bbox=None) veya zaten sıfır kenarlı görsellerde no-op."""
+    (bbox=None) veya zaten sıfır kenarlı görsellerde no-op.
+    autocrop_mode: border (eski), subject, both (union)."""
     if not cfg or not bool(cfg.get("autocrop_enabled", False)):
         return img
     try:
-        bbox = _autocrop_bbox(img)
+        bbox = _autocrop_bbox_smart(img, cfg)
         if bbox and bbox != (0, 0, img.width, img.height):
-            _log.info(f"[AUTOCROP] {img.width}x{img.height} -> "
+            _log.info(f"[AUTOCROP:{str(cfg.get('autocrop_mode','border')).upper()}] {img.width}x{img.height} -> "
                       f"{bbox[2]-bbox[0]}x{bbox[3]-bbox[1]}")
             return img.crop(bbox)
     except Exception as e:
@@ -664,7 +704,7 @@ def split_gif_frames(path: str, outdir: str, template: dict, cfg: dict | None = 
     # kare kare hesaplansaydı içerik hareket ettikçe boyut değişip titrerdi.
     if cfg and bool(cfg.get("autocrop_enabled", False)):
         try:
-            bbox = _autocrop_bbox(frames[0])
+            bbox = _autocrop_bbox_smart(frames[0], cfg)
             if bbox and bbox != (0, 0, frames[0].width, frames[0].height):
                 frames = [f.crop(bbox) for f in frames]
         except Exception as e:
