@@ -166,6 +166,7 @@ class AppConfig(BaseModel):
     steam: SteamConfig = Field(default_factory=SteamConfig)
     multi_band_count: Annotated[int, Field(ge=1, le=20)] = 3
     onboarding_tips_shown: bool = False
+    theme: Annotated[Literal["dark", "light", "system"], Field(default="dark")] = "dark"
     effects: EffectConfig = Field(default_factory=EffectConfig)
 
     @property

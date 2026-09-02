@@ -43,6 +43,7 @@ from steameditor.services.flat_config import FlatConfig
 from steameditor.events import emit, subscribe
 from steameditor.ui.design_system import (
     apply_theme, make_ctk_image, COLORS, TYPO, RADIUS, make_font, lerp_color,
+    get_theme, set_theme, toggle_theme,
 )
 from steameditor.ui.components import (
     AnimButton, DropZone, StatusBar, SplitPreview,
@@ -324,6 +325,11 @@ class App(ctk.CTk):
         self._upload_proc = None
         self.template = DEFAULT_TEMPLATE
         self._cfg = FlatConfig(get_config_service().config)
+        # Apply saved theme (default dark)
+        try:
+            set_theme(self._cfg.get("theme", "dark"))
+        except Exception:
+            pass
         saved_out = self._cfg["output_dir"]
         _default_out = Path(__file__).parent.parent.parent / "output"
         self.output_dir = Path(saved_out) if saved_out and Path(saved_out).is_dir() else _default_out
@@ -338,6 +344,8 @@ class App(ctk.CTk):
         # Shortcuts
         self.bind("<Control-o>", lambda _e: self._pick_file())
         self.bind("<Control-Return>", lambda _e: self._split_single())
+        self.bind("<Control-t>", lambda _e: self._toggle_theme())
+        self.bind("<Control-T>", lambda _e: self._toggle_theme())
         self.bind("<Escape>", self._on_escape)
 
         # Recovery
@@ -485,6 +493,19 @@ class App(ctk.CTk):
         name_f.pack(side="left", padx=8)
         ctk.CTkLabel(name_f, text="SplitForge", font=make_font(TYPO.display_md), text_color=COLORS.text_primary).pack(anchor="w")
         ctk.CTkLabel(name_f, text="Steam Showcase Studio", font=make_font(TYPO.caption), text_color=COLORS.text_muted).pack(anchor="w")
+
+        # Theme toggle — compact, always visible
+        theme_f = ctk.CTkFrame(sb, fg_color="transparent")
+        theme_f.grid(row=1, column=0, sticky="ew", padx=10, pady=(6, 8))
+        self._theme_btn = AnimButton(
+            theme_f, text="🌙  Koyu" if get_theme() == "dark" else "☀️  Açık",
+            nc=COLORS.surface_3, hc=COLORS.surface_4, height=28, corner_radius=8,
+            font=make_font(TYPO.body_sm), text_color=COLORS.text_muted,
+            command=self._toggle_theme,
+        )
+        self._theme_btn.pack(fill="x")
+        # Tooltip hint
+        ctk.CTkLabel(theme_f, text="Ctrl+T", font=make_font(TYPO.mono_xs), text_color=COLORS.text_muted).pack()
 
         # Scrollable body
         body = ctk.CTkScrollableFrame(sb, fg_color="transparent",
@@ -721,6 +742,23 @@ class App(ctk.CTk):
             self._load_preview(self.current_path)
         status = "açık" if self._live_showcase else "kapalı"
         self._status.set(f"Canlı vitrin: {status}", COLORS.text_primary, COLORS.info if self._live_showcase else COLORS.text_muted)
+
+    def _toggle_theme(self):
+        """Dark/Light toggle — persists, requires restart for full refresh."""
+        try:
+            new = toggle_theme()
+            self._cfg["theme"] = new
+            get_config_service().save_config()
+            # Update button label
+            if hasattr(self, "_theme_btn"):
+                self._theme_btn.configure(text="☀️  Açık" if new == "light" else "🌙  Koyu")
+            self._status.set(
+                f"Tema: {'Açık' if new == 'light' else 'Koyu'} — yeniden başlatın (tam efekt için)",
+                COLORS.text_primary, COLORS.info,
+            )
+        except Exception as e:
+            from steameditor.services.log_service import get_logger
+            get_logger("theme").error(f"Theme toggle failed: {e}")
 
     def _toggle_suggestions_panel(self):
         """Toggle AI template suggestions panel."""

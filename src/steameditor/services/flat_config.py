@@ -52,7 +52,7 @@ _FIELD_MAP: dict[str, tuple[str, ...]] = {
 _TOP_FIELDS = {
     "default_preset", "output_dir", "last_input_dir",
     "open_output_after_process", "auto_upload", "multi_band_count",
-    "onboarding_tips_shown",
+    "onboarding_tips_shown", "theme",
 }
 
 

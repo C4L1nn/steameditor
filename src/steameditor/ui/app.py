@@ -690,7 +690,13 @@ class App(AppShell):
 # ══════════════════════════════════════════════════════════════════════
 
 def main():
-    apply_theme()
+    # Load saved theme before UI creation
+    try:
+        from steameditor.services.config_service import get_config_service
+        _saved = get_config_service().config.theme
+    except Exception:
+        _saved = "dark"
+    apply_theme(_saved)
     app = App()
     app.mainloop()
 

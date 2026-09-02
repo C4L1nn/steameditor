@@ -99,7 +99,7 @@ class ConfigService:
         # Top-level
         for k in ("default_preset", "output_dir", "last_input_dir",
                   "open_output_after_process", "auto_upload",
-                  "multi_band_count", "onboarding_tips_shown"):
+                  "multi_band_count", "onboarding_tips_shown", "theme"):
             if k in data:
                 mapped[k] = data[k]
         # Steam

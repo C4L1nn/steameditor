@@ -14,14 +14,14 @@ from PIL import Image
 
 @dataclass(frozen=True)
 class Colors:
-    """Modern color palette with semantic meaning and depth."""
+    """Modern color palette with semantic meaning and depth (DARK default)."""
 
     # ── Base neutrals ──
     # Pure blacks/whites for extreme contrast
     pure_black: str = "#000000"
     pure_white: str = "#ffffff"
 
-    # Deep surface hierarchy (6 levels)
+    # Deep surface hierarchy (6 levels) — DARK
     surface_0: str = "#030303"   # Deepest - app background
     surface_1: str = "#0a0a0b"   # Window chrome
     surface_2: str = "#111113"   # Primary panels
@@ -106,6 +106,43 @@ class Colors:
     scrollbar_track: str = "#00000000"   # Transparent
     scrollbar_thumb: str = "#52525b"     # Thumb
     scrollbar_thumb_hover: str = "#71717a"
+
+
+@dataclass(frozen=True)
+class LightColors(Colors):
+    """Light theme — same keys, light surfaces (inherits accent/semantic)."""
+
+    # Light surfaces (inverted hierarchy)
+    surface_0: str = "#f8fafc"   # App bg — slate-50
+    surface_1: str = "#f1f5f9"   # Window chrome — slate-100
+    surface_2: str = "#ffffff"   # Primary panels — white
+    surface_3: str = "#e2e8f0"   # Cards — slate-200
+    surface_4: str = "#cbd5e1"   # Inputs — slate-300
+    surface_5: str = "#94a3b8"   # Borders — slate-400
+    surface_raised: str = "#ffffff"
+    surface_overlay: str = "#f1f5f9"
+
+    border_hairline: str = "#e2e8f0"
+    border_subtle: str = "#cbd5e1"
+    border_default: str = "#94a3b8"
+    border_strong: str = "#64748b"
+
+    # Text — dark on light
+    text_primary: str = "#0f172a"       # slate-900
+    text_secondary: str = "#334155"     # slate-700
+    text_tertiary: str = "#475569"      # slate-600
+    text_muted: str = "#94a3b8"         # slate-400
+    text_disabled: str = "#cbd5e1"
+    text_inverse: str = "#f8fafc"
+
+    # Glass — dark on light
+    glass_bg: str = "#00000008"
+    glass_bg_strong: str = "#00000012"
+    glass_border: str = "#0000001a"
+    glass_shadow: str = "#00000020"
+
+    scrollbar_thumb: str = "#cbd5e1"
+    scrollbar_thumb_hover: str = "#94a3b8"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -448,7 +485,29 @@ class _ColorsAliased(Colors):
     pass
 
 
-COLORS = _ColorsAliased()
+@_alias_colors
+class _LightColorsAliased(LightColors):
+    pass
+
+
+# Global theme state
+_DARK_COLORS: _ColorsAliased = _ColorsAliased()
+_LIGHT_COLORS: _LightColorsAliased = _LightColorsAliased()
+_THEMES: dict[str, Colors] = {"dark": _DARK_COLORS, "light": _LIGHT_COLORS}
+_CURRENT_THEME: str = "dark"
+
+
+class _ColorsProxy:
+    """Proxy so `from design_system import COLORS` stays live after theme switch."""
+
+    def __getattr__(self, name: str):
+        return getattr(_THEMES[_CURRENT_THEME], name)
+
+    def __dir__(self):
+        return dir(_THEMES[_CURRENT_THEME])
+
+
+COLORS: Colors = _ColorsProxy()  # type: ignore
 SPACING = Spacing()
 TYPO = Typography()
 RADIUS = BorderRadius()
@@ -461,15 +520,47 @@ INPUT = InputVariant()
 CARD = CardVariant()
 
 
+def get_theme() -> str:
+    return _CURRENT_THEME
+
+
+def get_colors(theme: str | None = None) -> Colors:
+    if theme is None:
+        # Return concrete colors for current theme (or proxy)
+        return _THEMES[_CURRENT_THEME]
+    return _THEMES.get(theme, _DARK_COLORS)
+
+
+def set_theme(theme: str) -> Colors:
+    """Tema değiştir — COLORS proxy otomatik güncellenir."""
+    global _CURRENT_THEME
+    if theme == "system":
+        theme = "dark"
+    if theme not in _THEMES:
+        theme = "dark"
+    _CURRENT_THEME = theme
+    apply_theme(theme)
+    return _THEMES[theme]
+
+
+def toggle_theme() -> str:
+    return set_theme("light" if _CURRENT_THEME == "dark" else "dark")
+
+
 # ═══════════════════════════════════════════════════════════════════════
 # THEME APPLICATION
 # ═══════════════════════════════════════════════════════════════════════
 
-def apply_theme():
+def apply_theme(theme: str | None = None):
     """Apply the complete theme to customtkinter."""
-    c = COLORS
+    global _CURRENT_THEME
+    if theme and theme in _THEMES:
+        _CURRENT_THEME = theme
+        c = _THEMES[theme]
+    else:
+        c = _THEMES[_CURRENT_THEME]
 
-    ctk.set_appearance_mode("dark")
+    ctk.set_appearance_mode("dark" if c is _DARK_COLORS else "light")
     ctk.set_default_color_theme("dark-blue")
 
     # Core overrides
@@ -531,24 +622,33 @@ def apply_theme():
     ctk.ThemeManager.theme["CTkOptionMenu"]["corner_radius"] = RADIUS.md
 
     # ScrollableFrame
-    ctk.ThemeManager.theme["CTkScrollableFrame"]["fg_color"] = "transparent"
-    ctk.ThemeManager.theme["CTkScrollableFrame"]["scrollbar_button_color"] = COLORS.surface_4
-    ctk.ThemeManager.theme["CTkScrollableFrame"]["scrollbar_button_hover_color"] = COLORS.accent_500
-    ctk.ThemeManager.theme["CTkScrollableFrame"]["corner_radius"] = RADIUS.lg
+    try:
+        ctk.ThemeManager.theme["CTkScrollableFrame"]["fg_color"] = "transparent"
+        ctk.ThemeManager.theme["CTkScrollableFrame"]["scrollbar_button_color"] = COLORS.surface_4
+        ctk.ThemeManager.theme["CTkScrollableFrame"]["scrollbar_button_hover_color"] = COLORS.accent_500
+        ctk.ThemeManager.theme["CTkScrollableFrame"]["corner_radius"] = RADIUS.lg
+    except KeyError:
+        pass
 
     # Scrollbar
-    ctk.ThemeManager.theme["CTkScrollbar"]["button_color"] = COLORS.surface_4
-    ctk.ThemeManager.theme["CTkScrollbar"]["button_hover_color"] = COLORS.accent_500
+    try:
+        ctk.ThemeManager.theme["CTkScrollbar"]["button_color"] = COLORS.surface_4
+        ctk.ThemeManager.theme["CTkScrollbar"]["button_hover_color"] = COLORS.accent_500
+    except KeyError:
+        pass
 
-    # Tabs (CTkTabview)
-    ctk.ThemeManager.theme["CTkTabview"]["fg_color"] = COLORS.surface_1
-    ctk.ThemeManager.theme["CTkTabview"]["segmented_button_fg_color"] = COLORS.surface_3
-    ctk.ThemeManager.theme["CTkTabview"]["segmented_button_selected_color"] = COLORS.accent_500
-    ctk.ThemeManager.theme["CTkTabview"]["segmented_button_selected_hover_color"] = COLORS.accent_600
-    ctk.ThemeManager.theme["CTkTabview"]["segmented_button_unselected_color"] = COLORS.surface_3
-    ctk.ThemeManager.theme["CTkTabview"]["segmented_button_unselected_hover_color"] = COLORS.surface_4
-    ctk.ThemeManager.theme["CTkTabview"]["text_color"] = COLORS.text_primary
-    ctk.ThemeManager.theme["CTkTabview"]["segmented_button_corner_radius"] = RADIUS.md
+    # Tabs (CTkTabview) — may not exist in older customtkinter
+    try:
+        ctk.ThemeManager.theme["CTkTabview"]["fg_color"] = COLORS.surface_1
+        ctk.ThemeManager.theme["CTkTabview"]["segmented_button_fg_color"] = COLORS.surface_3
+        ctk.ThemeManager.theme["CTkTabview"]["segmented_button_selected_color"] = COLORS.accent_500
+        ctk.ThemeManager.theme["CTkTabview"]["segmented_button_selected_hover_color"] = COLORS.accent_600
+        ctk.ThemeManager.theme["CTkTabview"]["segmented_button_unselected_color"] = COLORS.surface_3
+        ctk.ThemeManager.theme["CTkTabview"]["segmented_button_unselected_hover_color"] = COLORS.surface_4
+        ctk.ThemeManager.theme["CTkTabview"]["text_color"] = COLORS.text_primary
+        ctk.ThemeManager.theme["CTkTabview"]["segmented_button_corner_radius"] = RADIUS.md
+    except KeyError:
+        pass
 
 
 # ═══════════════════════════════════════════════════════════════════════
