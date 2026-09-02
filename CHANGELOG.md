@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.1] - 2026-09-02
+
+### 🔒 Fixed — Kritik Riskler
+- **Secret** `opencode.json` API key env var'a taşındı (`{env:NVIDIA_API_KEY}`), `.env.example` eklendi (`opencode.json:9`, `.gitignore:27`)
+- **Kod çoğalması** `core.py:1` ve `config.py:1` tek kaynak proxy shims (`processor.py`, `config_legacy.py`), `processor.py:81`/`135` dual-layout border/gifsicle path
+- **Bağımlılık** dead deps temizlendi (`pynput`, `platformdirs`, `loguru`, `psutil`, `pydantic-settings` → optional) (`pyproject.toml:25`, `requirements.txt:1`), `performance.py` silindi
+- **Cross-platform** `processor.py:360` font adayları Win/Mac/Linux + fallback
+- **Servisler** `events.py:18` stable ID, `image_cache.py:23` strong LRU, `worker_pool.py:1` TaskQueue düzeltildi
+- **Config** `config_legacy.py:111` dual-layout, `flat_config.py:20` output/steam mapping, `config_service.py:83` legacy migrasyon
+- **UI** `editor.py:1` shim → `src/steameditor/ui/app_shell.py:1` (Strateji A)
+- **Test** 32 yeni test (`test_events`, `test_image_cache`, `test_worker_pool`, `test_flat_config`), toplam `149 passed`
+
+### 🧹 Changed
+- `pyproject.toml` `performance` extra kaldırıldı, `pydantic` minimal set
+- `README.md:20` env setup eklendi
+
+---
+
 ## [2.0.0] - 2024-01-15
 
 ### 🎉 Major Release - Complete Rewrite

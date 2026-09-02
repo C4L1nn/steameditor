@@ -80,10 +80,134 @@ class ConfigService:
         self._load_templates()
         # Profiles, projects, history loaded on demand
 
+    def _migrate_legacy_config(self) -> Path | None:
+        """Varsa kök `steam_splitter_config.json`'u yeni konuma taşı."""
+        # Proje kökü: src/steameditor/services -> 3 üst
+        try:
+            proj_root = Path(__file__).parents[3]
+            legacy = proj_root / "steam_splitter_config.json"
+            if legacy.is_file() and not self._config_file.exists():
+                return legacy
+        except Exception:
+            pass
+        return None
+
+    def _legacy_to_appconfig(self, data: dict) -> dict:
+        """Legacy flat dict -> AppConfig dict (Pydantic)."""
+        # Map flat anahtarları nested yapıya
+        mapped: dict[str, Any] = {}
+        # Top-level
+        for k in ("default_preset", "output_dir", "last_input_dir",
+                  "open_output_after_process", "auto_upload",
+                  "multi_band_count", "onboarding_tips_shown"):
+            if k in data:
+                mapped[k] = data[k]
+        # Steam
+        steam: dict[str, Any] = {}
+        sm = {
+            "steam_api_key": "api_key",
+            "steam_app_id": "app_id",
+            "steam_published_file_id": "published_file_id",
+            "steam_community_upload_url": "community_url",
+            "steam_community_profile_dir": "profile_dir",
+            "steam_community_auto_submit": "auto_submit",
+            "steam_community_wait_after_upload_ms": "wait_after_upload_ms",
+            "steam_community_title_template": "title_template",
+        }
+        for old, new in sm.items():
+            if old in data:
+                steam[new] = data[old]
+        if steam:
+            mapped["steam"] = steam
+        # Effects
+        effects: dict[str, Any] = {}
+        # border_fx
+        bfx: dict[str, Any] = {}
+        for old, new in [("border_fx_enabled", "enabled"),
+                         ("border_fx_template", "template"),
+                         ("border_fx_color", "color"),
+                         ("border_fx_opacity", "opacity"),
+                         ("border_fx_glow", "glow")]:
+            if old in data:
+                bfx[new] = data[old]
+        if bfx:
+            effects["border_fx"] = bfx
+        # text_overlay
+        tov: dict[str, Any] = {}
+        for old, new in [("text_overlay_enabled", "enabled"),
+                         ("text_overlay_text", "text"),
+                         ("text_overlay_color", "color"),
+                         ("text_overlay_size", "size"),
+                         ("text_overlay_position", "position"),
+                         ("text_overlay_opacity", "opacity"),
+                         ("text_overlay_custom_pos", "custom_pos")]:
+            if old in data:
+                tov[new] = data[old]
+        if tov:
+            effects["text_overlay"] = tov
+        # auto_enhance
+        aen: dict[str, Any] = {}
+        if "auto_enhance_enabled" in data:
+            aen["enabled"] = data["auto_enhance_enabled"]
+        if "auto_enhance_intensity" in data:
+            aen["intensity"] = data["auto_enhance_intensity"]
+        if aen:
+            effects["auto_enhance"] = aen
+        if "autocrop_enabled" in data:
+            effects["autocrop_enabled"] = data["autocrop_enabled"]
+        # output
+        out: dict[str, Any] = {}
+        for old, new in [("output_format", "format"),
+                         ("jpg_quality", "jpg_quality"),
+                         ("gif_lossy", "gif_lossy"),
+                         ("gif_colors", "gif_colors")]:
+            if old in data:
+                out[new] = data[old]
+        if out:
+            effects["output"] = out
+        if effects:
+            mapped["effects"] = effects
+        return mapped
+
     def _load_config(self) -> None:
-        """Load and validate main config."""
+        """Load and validate main config (legacy migrasyon dahil)."""
         defaults = AppConfig()
+        # Legacy migrasyon: yeni config yoksa kök dosyadan taşı
         if not self._config_file.exists():
+            legacy_path = self._migrate_legacy_config()
+            if legacy_path is not None:
+                try:
+                    legacy_data = json.loads(legacy_path.read_text(encoding="utf-8"))
+                    mapped = self._legacy_to_appconfig(legacy_data)
+                    merged = {**defaults.model_dump(), **mapped}
+                    # Nested merge için steam/effects'i derin birleştir
+                    if "steam" in mapped:
+                        merged["steam"] = {**defaults.model_dump()["steam"], **mapped["steam"]}
+                    if "effects" in mapped:
+                        # effects alt dict'leri de derin birleştir
+                        def _deep_merge(a, b):
+                            res = dict(a)
+                            for k, v in b.items():
+                                if isinstance(v, dict) and isinstance(res.get(k), dict):
+                                    res[k] = _deep_merge(res[k], v)
+                                else:
+                                    res[k] = v
+                            return res
+                        merged["effects"] = _deep_merge(defaults.model_dump()["effects"], mapped["effects"])
+                    self._config = AppConfig(**merged)
+                    self.save_config()
+                    # Yedek kopya bırak (orijinali silme — shim hâlâ kullanıyor)
+                    backup = legacy_path.with_suffix(".json.migrated")
+                    try:
+                        import shutil
+                        shutil.copy2(legacy_path, backup)
+                    except Exception:
+                        pass
+                    return
+                except Exception as e:
+                    # Migrasyon başarısız → varsayılanla devam
+                    import logging
+                    logging.getLogger("steameditor.config").warning(f"Legacy migrasyon hatası: {e}")
             self._config = defaults
             self.save_config()
             return

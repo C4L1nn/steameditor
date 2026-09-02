@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "steameditor"
-version = "2.0.0"
+version = "2.0.1"
 description = "SplitForge — Steam Showcase Studio"
 readme = "README.md"
 license = {text = "MIT"}
@@ -45,13 +45,6 @@ dev = [
 packaging = [
     "pyinstaller>=6.1.0",
     "nsist>=3.0.0",
-]
-performance = [
-    "numpy>=1.24.0",
-    "torch>=2.0.0; sys_platform != 'darwin'",
-    "pyopencl>=2022.3",
-    "py-cpuinfo>=9.0.0",
-    "scipy>=1.10.0",
 ]
 automation = [
     "pynput>=1.7.6",
@@ -189,7 +182,31 @@ reportUnknownParameterType = false
 reportUnknownArgumentType = false
 
 [[tool.pyright.overrides]]
+path = "src/steameditor/services/worker_pool.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/services/image_cache.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
 path = "src/steameditor/core/uploader.py"
+typeCheckingMode = "basic"
+reportUnknownMemberType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportUnknownArgumentType = false
+
+[[tool.pyright.overrides]]
+path = "src/steameditor/events.py"
 typeCheckingMode = "basic"
 reportUnknownMemberType = false
 reportUnknownVariableType = false

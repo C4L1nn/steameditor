@@ -33,6 +33,20 @@ _FIELD_MAP: dict[str, tuple[str, ...]] = {
     "text_overlay_custom_pos": ("effects", "text_overlay", "custom_pos"),
     "auto_enhance_enabled": ("effects", "auto_enhance", "enabled"),
     "auto_enhance_intensity": ("effects", "auto_enhance", "intensity"),
+    # Output
+    "output_format": ("effects", "output", "format"),
+    "jpg_quality": ("effects", "output", "jpg_quality"),
+    "gif_lossy": ("effects", "output", "gif_lossy"),
+    "gif_colors": ("effects", "output", "gif_colors"),
+    # Steam
+    "steam_api_key": ("steam", "api_key"),
+    "steam_app_id": ("steam", "app_id"),
+    "steam_published_file_id": ("steam", "published_file_id"),
+    "steam_community_upload_url": ("steam", "community_url"),
+    "steam_community_profile_dir": ("steam", "profile_dir"),
+    "steam_community_auto_submit": ("steam", "auto_submit"),
+    "steam_community_wait_after_upload_ms": ("steam", "wait_after_upload_ms"),
+    "steam_community_title_template": ("steam", "title_template"),
 }
 
 _TOP_FIELDS = {

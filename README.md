@@ -2,11 +2,11 @@
 
 > Professional desktop tool for creating Steam Workshop showcase images with automated upload.
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/aykut/steameditor/releases)
+[![Version](https://img.shields.io/badge/version-2.0.1-blue.svg)](https://github.com/aykut/steameditor/releases)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Build](https://github.com/aykut/steameditor/actions/workflows/ci.yml/badge.svg)](https://github.com/aykut/steameditor/actions)
-[![Tests](https://img.shields.io/badge/tests-117%20passing-brightgreen.svg)](https://github.com/aykut/steameditor/actions)
+[![Tests](https://img.shields.io/badge/tests-149%20passing-brightgreen.svg)](https://github.com/aykut/steameditor/actions)
 
 ## ✨ Features
 
@@ -27,6 +27,18 @@
 pip install -r requirements.txt
 python -m steameditor
 ```
+
+## 🔐 Environment (AI Development)
+
+`opencode.json` artık secret içermez — API anahtarı env var ile verilir:
+
+```bash
+cp .env.example .env
+# .env içine NVIDIA_API_KEY=nvapi-... ekle
+# opencode.json -> {env:NVIDIA_API_KEY} kullanır
+```
+
+> `opencode.json` ve `.env` `.gitignore`'da — asla commit etmeyin. Örnek: `opencode.json.example`.
 
 ## 📖 Documentation
 
